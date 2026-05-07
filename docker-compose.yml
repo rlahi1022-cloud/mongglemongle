@@ -1,4 +1,40 @@
 services:
+  # MinIO — S3 호환 오브젝트 스토리지 (기획 14.4의 monggle-media 버킷 역할)
+  # MVP 백엔드는 아직 로컬 FS를 쓰지만, MinIO는 띄워둬서 마이그레이션 시
+  # MONGGLE_S3_ENDPOINT 환경변수만 바꾸면 즉시 사용 가능.
+  minio:
+    image: minio/minio:latest
+    container_name: monggle-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: monggle_admin
+      MINIO_ROOT_PASSWORD: monggle_dev_secret
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # 웹 콘솔
+    volumes:
+      - monggle_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # AI 허브 — Python FastAPI 임베딩 서버 (기획 5장).
+  # MVP는 SHA-256 기반 64차원 stub 임베딩. 인터페이스는 BGE-m3 도입 시 그대로 유지.
+  ai-hub:
+    build: ./ai-hub
+    container_name: monggle-ai-hub
+    restart: unless-stopped
+    ports:
+      - "9100:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   mariadb:
     image: mariadb:11
     container_name: monggle-mariadb
@@ -37,3 +73,4 @@ services:
 volumes:
   monggle_mariadb_data:
   monggle_redis_data:
+  monggle_minio_data:

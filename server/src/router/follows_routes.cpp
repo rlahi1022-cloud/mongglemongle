@@ -1,10 +1,14 @@
 #include "monggle/router/routes.h"
 #include "monggle/auth/auth_service.h"
+#include "monggle/cache/ttl_cache.h"
+#include "monggle/event/event_bus.h"
 #include "monggle/follows/follows_service.h"
 #include "monggle/notifications/notifications_service.h"
 
 #include <drogon/drogon.h>
 #include <json/json.h>
+
+#include <chrono>
 
 #include <memory>
 #include <string>
@@ -165,7 +169,7 @@ void configureFollowsRoutes(std::shared_ptr<AuthService> authService,
         },
         {drogon::Get});
 
-    // GET /me/feed
+    // GET /me/feed (L1 캐시 30초)
     drogon::app().registerHandler(
         "/me/feed",
         [authService, followsService](const drogon::HttpRequestPtr& req,
@@ -180,6 +184,18 @@ void configureFollowsRoutes(std::shared_ptr<AuthService> authService,
             }
             if (auto l = req->getParameter("limit"); !l.empty()) {
                 try { limit = std::stoi(l); } catch (...) {}
+            }
+
+            std::string cacheKey = "feed:" + std::to_string(*userId) + ":"
+                                   + std::to_string(cursor) + ":" + std::to_string(limit);
+            auto& cache = TtlCache::feedCache();
+            if (auto cached = cache.get(cacheKey)) {
+                auto resp = drogon::HttpResponse::newHttpResponse();
+                resp->setBody(std::move(*cached));
+                resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+                resp->addHeader("X-Cache", "HIT");
+                cb(resp);
+                return;
             }
 
             auto r = followsService->feed(*userId, cursor, limit);
@@ -207,7 +223,17 @@ void configureFollowsRoutes(std::shared_ptr<AuthService> authService,
             body["next_cursor"] = page.hasNext
                                       ? static_cast<Json::Int64>(page.nextCursor)
                                       : Json::Value(Json::nullValue);
-            cb(drogon::HttpResponse::newHttpJsonResponse(body));
+
+            Json::StreamWriterBuilder b;
+            b["indentation"] = "";
+            std::string serialized = Json::writeString(b, body);
+            cache.set(cacheKey, serialized, std::chrono::seconds(30));
+
+            auto resp = drogon::HttpResponse::newHttpResponse();
+            resp->setBody(std::move(serialized));
+            resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+            resp->addHeader("X-Cache", "MISS");
+            cb(resp);
         },
         {drogon::Get});
 }

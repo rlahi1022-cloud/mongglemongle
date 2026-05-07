@@ -25,6 +25,7 @@ add_executable(mongglemonggle
     server/src/auth/password_service.cpp
     server/src/event/event_bus.cpp
     server/src/blocks/blocks_service.cpp
+    server/src/cache/ttl_cache.cpp
     server/src/comments/comments_service.cpp
     server/src/follows/follows_service.cpp
     server/src/media/media_service.cpp
