@@ -103,6 +103,18 @@ PResult<std::string> ProfileService::updateAvatar(std::int64_t userId,
     }
 }
 
+PResult<bool> ProfileService::updateDisplayName(std::int64_t userId, const std::string& newName) {
+    if (newName.empty())          return ProfileError{ProfileError::BadRequest, "name required"};
+    if (newName.size() > 100)     return ProfileError{ProfileError::BadRequest, "name too long"};
+    try {
+        db()->execSqlSync(
+            "UPDATE users SET display_name = ? WHERE id = ?", newName, userId);
+        return true;
+    } catch (const std::exception& e) {
+        return ProfileError{ProfileError::InternalError, e.what()};
+    }
+}
+
 std::optional<std::string> ProfileService::avatarFile(std::int64_t userId) {
     auto p = get(userId);
     if (!p || p->avatarPath.empty()) return std::nullopt;

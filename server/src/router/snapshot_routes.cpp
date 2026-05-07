@@ -71,6 +71,7 @@ void configureSnapshotRoutes(std::shared_ptr<AuthService> authService,
             for (const auto& p : state.posts) {
                 Json::Value j(Json::objectValue);
                 j["id"]            = static_cast<Json::Int64>(p.id);
+                j["title"]         = p.title;
                 j["body"]          = p.body;
                 j["visibility"]    = p.visibility;
                 j["deleted"]       = p.deleted;

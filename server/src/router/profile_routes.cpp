@@ -103,6 +103,36 @@ void configureProfileRoutes(std::shared_ptr<AuthService> authService,
         },
         {drogon::Put, drogon::Post});
 
+    // PATCH /me — display_name 변경 (프로필 수정 페이지)
+    drogon::app().registerHandler(
+        "/me",
+        [authService, profileService](
+            const drogon::HttpRequestPtr& req,
+            std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+            auto userId = authService->verifyAccess(std::string(req->getHeader("Authorization")));
+            if (!userId) {
+                cb(problemJson(drogon::k401Unauthorized, "unauthorized",
+                               "valid Bearer access token required", "/me"));
+                return;
+            }
+            auto json = req->getJsonObject();
+            if (!json || !json->isMember("display_name") || !(*json)["display_name"].isString()) {
+                cb(problemJson(drogon::k400BadRequest, "bad_request",
+                               "display_name (string) required", "/me"));
+                return;
+            }
+            std::string name = (*json)["display_name"].asString();
+            auto r = profileService->updateDisplayName(*userId, name);
+            if (auto* e = std::get_if<ProfileError>(&r)) {
+                cb(profileErrorResponse(*e, "/me"));
+                return;
+            }
+            Json::Value body;
+            body["display_name"] = name;
+            cb(drogon::HttpResponse::newHttpJsonResponse(body));
+        },
+        {drogon::Patch});
+
     // GET /users/{id}/avatar — 공개. 없으면 404 → 프론트는 첫 글자 fallback.
     drogon::app().registerHandlerViaRegex(
         "^/users/([0-9]+)/avatar$",

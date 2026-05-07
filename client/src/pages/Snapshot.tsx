@@ -31,11 +31,10 @@ export function SnapshotPage() {
   };
 
   const onRestoreOne = async (postId: number) => {
-    if (!confirm(`post #${postId} 을(를) 다시 살릴까요? 글이 현재 시점에 다시 보이게 됩니다.`)) return;
+    if (!confirm(`post #${postId} 을(를) 다시 살릴까요?`)) return;
     setRestoring(postId);
     try {
       await posts.restore(postId);
-      // 재조회 — 같은 시점으로 다시 가져와 deleted=false 반영
       await run();
     } catch (e) {
       alert(e instanceof ApiError ? e.message : "실패");
@@ -43,7 +42,7 @@ export function SnapshotPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 max-w-3xl mx-auto">
       <div className="cloud-card px-5 py-4">
         <h1 className="text-2xl font-bold text-foreground">⏳ 시점 복원</h1>
         <p className="text-foreground/70 text-sm mt-1">
@@ -76,8 +75,7 @@ export function SnapshotPage() {
       {data && (
         <div className="space-y-3">
           <div className="cloud-card px-4 py-2 text-sm text-foreground">
-            복원 시점: <span className="font-mono">{data.target_time}</span>
-            · 글 {data.posts.length}개
+            복원 시점: <span className="font-mono">{data.target_time}</span> · 글 {data.posts.length}개
           </div>
           {data.posts.length === 0 && (
             <Card className="cloud-card">
@@ -87,33 +85,36 @@ export function SnapshotPage() {
             </Card>
           )}
           {data.posts.map((p) => (
-            <Card key={p.id} className={`cloud-card ${p.deleted ? "opacity-70" : ""}`}>
+            <Card key={p.id} className={`cloud-card ${p.deleted ? "opacity-80" : ""}`}>
               <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">post #{p.id}</div>
-                  <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="font-medium">post #{p.id}</div>
+                    {p.title && (
+                      <div className="font-semibold truncate">— {p.title}</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs shrink-0">
                     <span className="px-2 py-0.5 rounded-full bg-secondary">{p.visibility}</span>
                     {p.deleted && (
-                      <span className="px-2 py-0.5 rounded-full bg-destructive text-destructive-foreground">삭제됨</span>
+                      <>
+                        <span className="px-2 py-0.5 rounded-full bg-destructive text-destructive-foreground">삭제됨</span>
+                        <Button
+                          size="sm"
+                          onClick={() => onRestoreOne(p.id)}
+                          disabled={restoring === p.id}
+                          className="rounded-2xl h-7 px-3"
+                        >
+                          {restoring === p.id ? "살리는 중..." : "↩ 살리기"}
+                        </Button>
+                      </>
                     )}
                     <span className="text-muted-foreground">last_event #{p.last_event_id}</span>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="whitespace-pre-wrap">{p.body}</div>
-                {p.deleted && (
-                  <div className="flex justify-end">
-                    <Button
-                      size="sm"
-                      onClick={() => onRestoreOne(p.id)}
-                      disabled={restoring === p.id}
-                      className="rounded-2xl"
-                    >
-                      {restoring === p.id ? "살리는 중..." : "↩ 이 글 살리기"}
-                    </Button>
-                  </div>
-                )}
+              <CardContent>
+                <div className="whitespace-pre-wrap text-sm">{p.body}</div>
               </CardContent>
             </Card>
           ))}

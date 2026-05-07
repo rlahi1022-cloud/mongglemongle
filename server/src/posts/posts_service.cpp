@@ -54,6 +54,7 @@ Post rowToPost(const drogon::orm::Row& row) {
     Post p;
     p.id              = row["id"].as<std::int64_t>();
     p.userId          = row["user_id"].as<std::int64_t>();
+    p.title           = row["title"].isNull() ? std::string{} : row["title"].as<std::string>();
     p.body            = row["body"].as<std::string>();
     p.visibility      = parseVisibility(row["visibility"].as<std::string>())
                             .value_or(Visibility::Private);
@@ -119,21 +120,24 @@ Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest
         auto tx = db()->newTransaction();
 
         auto inserted = tx->execSqlSync(
-            "INSERT INTO posts (user_id, body, visibility, download_policy) "
-            "VALUES (?, ?, ?, ?)",
-            authorId, req.body,
+            "INSERT INTO posts (user_id, title, body, visibility, download_policy) "
+            "VALUES (?, ?, ?, ?, ?)",
+            authorId,
+            req.title,
+            req.body,
             std::string(toDbString(req.visibility)),
             std::string(toDbString(req.downloadPolicy)));
         std::int64_t postId = inserted.insertId();
 
         Json::Value payload(Json::objectValue);
+        payload["title"]           = req.title;
         payload["body"]            = req.body;
         payload["visibility"]      = toDbString(req.visibility);
         payload["download_policy"] = toDbString(req.downloadPolicy);
         insertEvent(tx, authorId, postId, kEventCreated, payload);
 
         auto rows = tx->execSqlSync(
-            "SELECT id, user_id, body, visibility, download_policy, created_at, updated_at "
+            "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
             "FROM posts WHERE id = ?", postId);
         if (rows.size() == 0) {
             return PostsError{PostsError::InternalError, "post vanished after insert"};
@@ -149,7 +153,7 @@ Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest
 Result<Post> PostsService::get(std::int64_t viewerId, std::int64_t postId) {
     try {
         auto rows = db()->execSqlSync(
-            "SELECT id, user_id, body, visibility, download_policy, created_at, updated_at "
+            "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
             "FROM posts WHERE id = ? AND deleted_at IS NULL LIMIT 1",
             postId);
         if (rows.size() == 0) {
@@ -167,7 +171,7 @@ Result<Post> PostsService::get(std::int64_t viewerId, std::int64_t postId) {
 
 Result<Post> PostsService::update(std::int64_t authorId, std::int64_t postId,
                                   const UpdatePostRequest& req) {
-    if (!req.body && !req.visibility && !req.downloadPolicy) {
+    if (!req.body && !req.visibility && !req.downloadPolicy && !req.title) {
         return PostsError{PostsError::BadRequest, "at least one field required"};
     }
     try {
@@ -187,6 +191,14 @@ Result<Post> PostsService::update(std::int64_t authorId, std::int64_t postId,
         Visibility prevVisibility = parseVisibility(rows[0]["visibility"].as<std::string>())
                                         .value_or(Visibility::Private);
 
+        if (req.title) {
+            std::string t = *req.title;
+            tx->execSqlSync(
+                "UPDATE posts SET title = ? WHERE id = ?", t, postId);
+            Json::Value payload(Json::objectValue);
+            payload["title"] = t;
+            insertEvent(tx, authorId, postId, kEventEdited, payload);
+        }
         if (req.body) {
             tx->execSqlSync("UPDATE posts SET body = ? WHERE id = ?", *req.body, postId);
             Json::Value payload(Json::objectValue);
@@ -208,7 +220,7 @@ Result<Post> PostsService::update(std::int64_t authorId, std::int64_t postId,
         }
 
         auto refreshed = tx->execSqlSync(
-            "SELECT id, user_id, body, visibility, download_policy, created_at, updated_at "
+            "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
             "FROM posts WHERE id = ?", postId);
         return rowToPost(refreshed[0]);
     } catch (const drogon::orm::DrogonDbException& e) {
@@ -256,7 +268,7 @@ Result<std::vector<Post>> PostsService::searchOwn(std::int64_t userId,
         // 운영 규모 도달 시 Elasticsearch/Meilisearch 또는 AI 임베딩 검색으로 대체.
         std::string like = "%" + query + "%";
         auto rows = db()->execSqlSync(
-            "SELECT id, user_id, body, visibility, download_policy, created_at, updated_at "
+            "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
             "FROM posts "
             "WHERE user_id = ? AND deleted_at IS NULL AND body LIKE ? "
             "ORDER BY id DESC LIMIT ?",
@@ -293,7 +305,7 @@ Result<Post> PostsService::restore(std::int64_t authorId, std::int64_t postId) {
         insertEvent(tx, authorId, postId, kEventRestored, payload);
 
         auto refreshed = tx->execSqlSync(
-            "SELECT id, user_id, body, visibility, download_policy, created_at, updated_at "
+            "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
             "FROM posts WHERE id = ?", postId);
         return rowToPost(refreshed[0]);
     } catch (const drogon::orm::DrogonDbException& e) {
@@ -314,7 +326,7 @@ Result<TimelinePage> PostsService::timeline(std::int64_t viewerId, std::int64_t 
         const int  fetchN    = limit + 1;  // 다음 cursor 판정용 +1
 
         std::ostringstream sql;
-        sql << "SELECT id, user_id, body, visibility, download_policy, created_at, updated_at "
+        sql << "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
                "FROM posts WHERE user_id = ? AND deleted_at IS NULL ";
         if (!isOwner) {
             sql << (isFriend ? " AND visibility IN ('public','friends') "

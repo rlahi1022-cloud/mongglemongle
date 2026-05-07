@@ -189,6 +189,7 @@ void configureFollowsRoutes(std::shared_ptr<AuthService> authService,
                 j["id"]              = static_cast<Json::Int64>(it.id);
                 j["user_id"]         = static_cast<Json::Int64>(it.userId);
                 j["author_name"]     = it.authorDisplayName;
+                j["title"]           = it.title;
                 j["body"]            = it.body;
                 j["visibility"]      = it.visibility;
                 j["download_policy"] = it.downloadPolicy;

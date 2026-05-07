@@ -49,6 +49,7 @@ void applyEvent(std::map<std::int64_t, PostStateAt>& state,
     if (eventType == "created") {
         PostStateAt p{};
         p.id          = postId;
+        p.title       = payload.get("title", "").asString();
         p.body        = payload.get("body", "").asString();
         p.visibility  = payload.get("visibility", "private").asString();
         p.deleted     = false;
@@ -61,6 +62,7 @@ void applyEvent(std::map<std::int64_t, PostStateAt>& state,
         // 이벤트 순서가 깨졌거나 (created 없이 edited 등) — payload만으로 가능한 만큼 채움
         PostStateAt p{};
         p.id          = postId;
+        p.title       = payload.get("title", "").asString();
         p.body        = payload.get("body", "").asString();
         p.visibility  = "private";
         p.deleted     = (eventType == "deleted");
@@ -70,7 +72,8 @@ void applyEvent(std::map<std::int64_t, PostStateAt>& state,
     }
 
     if (eventType == "edited") {
-        if (payload.isMember("body")) it->second.body = payload["body"].asString();
+        if (payload.isMember("title")) it->second.title = payload["title"].asString();
+        if (payload.isMember("body"))  it->second.body  = payload["body"].asString();
         it->second.lastEventId = eventId;
     } else if (eventType == "visibility_changed") {
         if (payload.isMember("to")) it->second.visibility = payload["to"].asString();

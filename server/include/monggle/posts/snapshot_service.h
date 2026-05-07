@@ -11,6 +11,7 @@ namespace monggle {
 // 임의 시점 t에서의 post 상태 — id별 본문/visibility/삭제여부
 struct PostStateAt {
     std::int64_t id;
+    std::string  title;
     std::string  body;
     std::string  visibility;       // 'public'|'friends'|'private'
     bool         deleted;

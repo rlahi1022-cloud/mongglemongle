@@ -36,6 +36,9 @@ public:
                                        const char* bytes,
                                        std::size_t size);
 
+    // 표시 이름 변경 (프로필 수정 페이지에서 사용)
+    PResult<bool> updateDisplayName(std::int64_t userId, const std::string& newName);
+
     // GET /users/{id}/avatar 용 절대 디스크 경로.
     std::optional<std::string> avatarFile(std::int64_t userId);
 

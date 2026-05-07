@@ -22,6 +22,7 @@ std::optional<DownloadPolicy> parseDownloadPolicy(const std::string& s);
 struct Post {
     std::int64_t   id;
     std::int64_t   userId;
+    std::string    title;         // 빈 문자열이면 제목 미설정
     std::string    body;
     Visibility     visibility;
     DownloadPolicy downloadPolicy;
@@ -39,12 +40,14 @@ template <typename T>
 using Result = std::variant<T, PostsError>;
 
 struct CreatePostRequest {
+    std::string    title;         // 선택, 빈 문자열 가능
     std::string    body;
     Visibility     visibility;
     DownloadPolicy downloadPolicy;
 };
 
 struct UpdatePostRequest {
+    std::optional<std::string>    title;
     std::optional<std::string>    body;
     std::optional<Visibility>     visibility;
     std::optional<DownloadPolicy> downloadPolicy;

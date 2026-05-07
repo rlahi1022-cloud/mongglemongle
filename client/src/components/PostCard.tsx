@@ -14,16 +14,17 @@ const visLabel: Record<string, string> = {
 };
 
 interface Props {
-  postId?: number;            // 있을 때만 미디어 fetch
-  authorId?: number;          // 있을 때 아바타 표시
+  postId?: number;
+  authorId?: number;
   authorName: string;
+  title?: string;
   body: string;
   visibility: string;
   createdAt: string;
   rightSlot?: React.ReactNode;
 }
 
-export function PostCard({ postId, authorId, authorName, body, visibility, createdAt, rightSlot }: Props) {
+export function PostCard({ postId, authorId, authorName, title, body, visibility, createdAt, rightSlot }: Props) {
   const [items, setItems] = useState<PostMedia[]>([]);
   const [avatarOk, setAvatarOk] = useState(true);
 
@@ -32,15 +33,15 @@ export function PostCard({ postId, authorId, authorName, body, visibility, creat
     let canceled = false;
     mediaApi.listForPost(postId)
       .then((r) => { if (!canceled) setItems(r.items); })
-      .catch(() => { /* ignore — 권한 없거나 미디어 없음 */ });
+      .catch(() => { /* ignore */ });
     return () => { canceled = true; };
   }, [postId]);
 
   return (
     <Card className="cloud-card">
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-        <div className="flex items-center gap-3">
-          <div className="relative h-10 w-10 rounded-full bg-gradient-to-br from-primary to-indigo-600 text-white grid place-items-center text-sm font-bold shadow-md overflow-hidden">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="relative h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-primary to-indigo-600 text-white grid place-items-center text-sm font-bold shadow-md overflow-hidden">
             {authorId && avatarOk && (
               <img
                 src={profileApi.avatarUrl(authorId)}
@@ -51,12 +52,12 @@ export function PostCard({ postId, authorId, authorName, body, visibility, creat
             )}
             <span className="z-0">{(authorName?.trim().charAt(0) ?? "?").toUpperCase()}</span>
           </div>
-          <div>
-            <CardTitle className="text-base">{authorName}</CardTitle>
+          <div className="min-w-0">
+            <CardTitle className="text-sm truncate">{authorName}</CardTitle>
             <div className="text-xs text-muted-foreground">{createdAt}</div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className={`text-xs px-2.5 py-0.5 rounded-full ${visBadge[visibility] ?? "bg-slate-100"}`}>
             {visLabel[visibility] ?? visibility}
           </span>
@@ -64,7 +65,10 @@ export function PostCard({ postId, authorId, authorName, body, visibility, creat
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="whitespace-pre-wrap leading-relaxed">{body}</div>
+        {title && (
+          <h3 className="text-lg font-bold leading-tight">{title}</h3>
+        )}
+        <div className="whitespace-pre-wrap leading-relaxed text-sm">{body}</div>
         {items.length > 0 && (
           <div className={items.length === 1 ? "" : "grid grid-cols-2 gap-2"}>
             {items.map((m) => (
@@ -78,7 +82,7 @@ export function PostCard({ postId, authorId, authorName, body, visibility, creat
                 {m.kind === "video" ? (
                   m.has_poster ? (
                     <div className="relative">
-                      <img src={mediaApi.thumbUrl(m.id)} alt="" className="w-full h-auto object-cover" />
+                      <img src={mediaApi.thumbUrl(m.id)} alt="" className="w-full max-h-96 object-cover" />
                       <div className="absolute inset-0 grid place-items-center text-white text-3xl drop-shadow">▶</div>
                     </div>
                   ) : (
@@ -88,7 +92,7 @@ export function PostCard({ postId, authorId, authorName, body, visibility, creat
                   <img
                     src={m.has_thumb ? mediaApi.thumbUrl(m.id) : mediaApi.viewUrl(m.id)}
                     alt=""
-                    className="w-full h-auto object-cover"
+                    className="w-full max-h-96 object-cover"
                   />
                 )}
               </a>

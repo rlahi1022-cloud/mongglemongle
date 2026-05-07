@@ -122,6 +122,7 @@ export type DownloadPolicy = "owner_only" | "followers" | "public_allowed";
 export interface Post {
   id: number;
   user_id: number;
+  title: string;
   body: string;
   visibility: Visibility;
   download_policy: DownloadPolicy;
@@ -168,6 +169,7 @@ export interface MediaAsset {
 
 export interface SnapshotPost {
   id: number;
+  title: string;
   body: string;
   visibility: Visibility;
   deleted: boolean;
@@ -208,10 +210,13 @@ export const auth = {
 };
 
 export const posts = {
-  create: (body: string, visibility: Visibility, download_policy: DownloadPolicy = "owner_only") =>
-    api<Post>("/posts", { method: "POST", body: JSON.stringify({ body, visibility, download_policy }) }),
+  create: (title: string, body: string, visibility: Visibility, download_policy: DownloadPolicy = "owner_only") =>
+    api<Post>("/posts", {
+      method: "POST",
+      body: JSON.stringify({ title, body, visibility, download_policy }),
+    }),
   get: (id: number) => api<Post>(`/posts/${id}`),
-  update: (id: number, patch: Partial<Pick<Post, "body" | "visibility" | "download_policy">>) =>
+  update: (id: number, patch: Partial<Pick<Post, "title" | "body" | "visibility" | "download_policy">>) =>
     api<Post>(`/posts/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (id: number) => api<void>(`/posts/${id}`, { method: "DELETE" }),
   restore: (id: number) => api<Post>(`/posts/${id}/restore`, { method: "POST" }),
@@ -257,8 +262,11 @@ export const profile = {
     fd.append("file", file);
     return api<{ avatar_path: string }>("/me/avatar", { method: "PUT", body: fd });
   },
-  // 브라우저 <img> 용. 캐시 무효화 위해 bust(timestamp). 비공개 토큰 안 붙이고
-  // 공개 엔드포인트로 단순화 (아바타는 누구나 볼 수 있음).
+  updateDisplayName: (display_name: string) =>
+    api<{ display_name: string }>("/me", {
+      method: "PATCH",
+      body: JSON.stringify({ display_name }),
+    }),
   avatarUrl: (userId: number, bust?: number) =>
     `${API_BASE}/users/${userId}/avatar${bust ? `?v=${bust}` : ""}`,
 };

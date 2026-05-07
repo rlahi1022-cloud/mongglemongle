@@ -27,7 +27,7 @@ export function SearchPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 max-w-3xl mx-auto">
       <div className="cloud-card px-5 py-4">
         <h1 className="text-2xl font-bold text-foreground">🔍 내 글 검색</h1>
         <p className="text-foreground/70 text-sm mt-1">
@@ -52,6 +52,7 @@ export function SearchPage() {
           postId={p.id}
           authorId={p.user_id}
           authorName="나"
+          title={p.title}
           body={p.body}
           visibility={p.visibility}
           createdAt={p.created_at}

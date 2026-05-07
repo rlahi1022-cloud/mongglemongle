@@ -47,6 +47,7 @@ Json::Value postToJson(const Post& p) {
     Json::Value j(Json::objectValue);
     j["id"]              = static_cast<Json::Int64>(p.id);
     j["user_id"]         = static_cast<Json::Int64>(p.userId);
+    j["title"]           = p.title;
     j["body"]            = p.body;
     j["visibility"]      = toDbString(p.visibility);
     j["download_policy"] = toDbString(p.downloadPolicy);
@@ -124,6 +125,14 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
                 return;
             }
             creq.body = (*json)["body"].asString();
+            if ((*json).isMember("title") && (*json)["title"].isString()) {
+                creq.title = (*json)["title"].asString();
+                if (creq.title.size() > 600) {  // utf-8 ~200자 안전
+                    cb(problemJson(drogon::k400BadRequest, "bad_request",
+                                   "title too long (~200 chars)", "/posts"));
+                    return;
+                }
+            }
 
             std::string visStr = (*json).get("visibility", "private").asString();
             std::string dlpStr = (*json).get("download_policy", "owner_only").asString();
@@ -216,6 +225,9 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
                     return;
                 }
                 UpdatePostRequest ureq;
+                if ((*json).isMember("title") && (*json)["title"].isString()) {
+                    ureq.title = (*json)["title"].asString();
+                }
                 if ((*json).isMember("body") && (*json)["body"].isString()) {
                     ureq.body = (*json)["body"].asString();
                 }
