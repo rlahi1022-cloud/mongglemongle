@@ -109,15 +109,15 @@ export function Layout() {
               title="프로필 수정"
             >
               <div className="relative h-9 w-9 rounded-full bg-white text-primary grid place-items-center text-sm font-bold overflow-hidden ring-2 ring-white/30">
-                <img
-                  src={profile.avatarUrl(userId, bust)}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-cover"
-                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                />
                 <span className="z-0">
                   {(displayName ?? "?").trim().charAt(0).toUpperCase() || "?"}
                 </span>
+                <img
+                  src={profile.avatarUrl(userId, bust)}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover z-10"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                />
               </div>
               <div className="leading-tight text-sm hidden lg:block">
                 <div className="font-bold text-white">{displayName ?? `user #${userId}`}</div>

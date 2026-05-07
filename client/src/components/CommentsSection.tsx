@@ -73,13 +73,13 @@ export function CommentsSection({ postId }: Props) {
           {items.map((c) => (
             <div key={c.id} className="flex items-start gap-2 text-sm">
               <div className="relative h-7 w-7 shrink-0 rounded-full bg-secondary text-foreground grid place-items-center text-xs font-bold overflow-hidden">
+                <span className="z-0">{c.author_name?.charAt(0)?.toUpperCase() || "?"}</span>
                 <img
                   src={profile.avatarUrl(c.user_id)}
                   alt=""
-                  className="absolute inset-0 w-full h-full object-cover"
+                  className="absolute inset-0 w-full h-full object-cover z-10"
                   onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                 />
-                <span className="z-0">{c.author_name?.charAt(0)?.toUpperCase() || "?"}</span>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">

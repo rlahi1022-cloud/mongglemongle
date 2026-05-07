@@ -47,15 +47,15 @@ export function PostCard({
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="relative h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-primary to-indigo-600 text-white grid place-items-center text-sm font-bold shadow-md overflow-hidden">
+            <span className="z-0">{(authorName?.trim().charAt(0) ?? "?").toUpperCase()}</span>
             {authorId && avatarOk && (
               <img
                 src={profileApi.avatarUrl(authorId)}
                 alt=""
-                className="absolute inset-0 w-full h-full object-cover"
+                className="absolute inset-0 w-full h-full object-cover z-10"
                 onError={() => setAvatarOk(false)}
               />
             )}
-            <span className="z-0">{(authorName?.trim().charAt(0) ?? "?").toUpperCase()}</span>
           </div>
           <div className="min-w-0">
             <CardTitle className="text-sm truncate">{authorName}</CardTitle>
