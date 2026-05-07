@@ -3,6 +3,8 @@
 #include "monggle/auth/jwt_service.h"
 #include "monggle/follows/follows_service.h"
 #include "monggle/media/media_service.h"
+#include "monggle/middleware/cors.h"
+#include "monggle/middleware/rate_limiter.h"
 #include "monggle/posts/posts_service.h"
 #include "monggle/posts/snapshot_service.h"
 #include "monggle/router/routes.h"
@@ -28,6 +30,11 @@ int main() {
     auto snapshotService = std::make_shared<monggle::SnapshotService>();
     auto mediaService    = std::make_shared<monggle::MediaService>(cfg.mediaStorageRoot, followsService);
 
+    // CORS는 라우트 등록 전에 설치
+    monggle::installCors(monggle::defaultDevCors());
+    // RateLimiter 싱글톤 워밍 (정책 등록)
+    (void) monggle::RateLimiter::instance();
+
     monggle::configureHealthRoutes();
     monggle::configureAuthRoutes(authService);
     monggle::configurePostsRoutes(authService, postsService);
@@ -48,14 +55,9 @@ int main() {
             "monggle_db",
             false,
             "utf8mb4")
-        .createRedisClient(
-            cfg.redisHost,
-            cfg.redisPort,
-            "monggle_redis",
-            "",
-            cfg.redisPoolSize,
-            true,
-            0)
+        // NOTE: Drogon 1.8.7 (Ubuntu 24.04) RedisClient가 segfault 발생.
+        // L2 캐시·readyz Redis ping은 RedisClient 안정화 또는 hiredis
+        // 직접 사용으로 후속 작업.
         .addListener(cfg.httpHost, cfg.httpPort)
         .setThreadNum(0)
         .setLogLevel(trantor::Logger::kInfo);

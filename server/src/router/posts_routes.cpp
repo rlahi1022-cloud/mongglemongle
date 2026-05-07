@@ -1,5 +1,6 @@
 #include "monggle/router/routes.h"
 #include "monggle/auth/auth_service.h"
+#include "monggle/middleware/rate_limiter.h"
 #include "monggle/posts/posts_service.h"
 
 #include <drogon/drogon.h>
@@ -98,6 +99,17 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
                                     std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
             auto userId = requireAuth(authService, req, cb, "/posts");
             if (!userId) return;
+
+            // Rate limit: 사용자당 분당 10회 (기획 12.8)
+            std::string key = std::to_string(*userId);
+            if (!RateLimiter::instance().tryAcquire("post_create", key)) {
+                auto resp = problemJson(drogon::k429TooManyRequests, "rate_limited",
+                                        "too many post creations", "/posts");
+                resp->addHeader("Retry-After", std::to_string(
+                    RateLimiter::instance().retryAfterSeconds("post_create", key)));
+                cb(resp);
+                return;
+            }
 
             auto json = req->getJsonObject();
             if (!json) {
@@ -272,6 +284,17 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
                                     std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
             auto userId = requireAuth(authService, req, cb, "/me/search");
             if (!userId) return;
+
+            // Rate limit: 사용자당 분당 30회 (기획 12.8 — AI 검색 항목)
+            std::string key = std::to_string(*userId);
+            if (!RateLimiter::instance().tryAcquire("search", key)) {
+                auto resp = problemJson(drogon::k429TooManyRequests, "rate_limited",
+                                        "too many search requests", "/me/search");
+                resp->addHeader("Retry-After", std::to_string(
+                    RateLimiter::instance().retryAfterSeconds("search", key)));
+                cb(resp);
+                return;
+            }
 
             auto q = req->getParameter("q");
             int limit = 20;

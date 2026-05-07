@@ -26,6 +26,8 @@ add_executable(mongglemonggle
     server/src/event/event_bus.cpp
     server/src/follows/follows_service.cpp
     server/src/media/media_service.cpp
+    server/src/middleware/cors.cpp
+    server/src/middleware/rate_limiter.cpp
     server/src/posts/posts_service.cpp
     server/src/posts/snapshot_service.cpp
     server/src/router/routes.cpp

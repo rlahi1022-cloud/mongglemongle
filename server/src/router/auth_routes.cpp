@@ -1,5 +1,6 @@
 #include "monggle/router/routes.h"
 #include "monggle/auth/auth_service.h"
+#include "monggle/middleware/rate_limiter.h"
 
 #include <drogon/drogon.h>
 #include <json/json.h>
@@ -95,6 +96,17 @@ void configureAuthRoutes(std::shared_ptr<AuthService> authService) {
         "/auth/login",
         [authService](const drogon::HttpRequestPtr& req,
                       std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+            // Rate limit: IP 기반 분당 5회 (기획 12.8)
+            std::string ip{req->getPeerAddr().toIp()};
+            if (!RateLimiter::instance().tryAcquire("auth_login", ip)) {
+                auto resp = problemJson(drogon::k429TooManyRequests, "rate_limited",
+                                        "too many login attempts", "/auth/login");
+                resp->addHeader("Retry-After", std::to_string(
+                    RateLimiter::instance().retryAfterSeconds("auth_login", ip)));
+                callback(resp);
+                return;
+            }
+
             auto json = req->getJsonObject();
             if (!json) {
                 callback(problemJson(drogon::k400BadRequest, "bad_request",
