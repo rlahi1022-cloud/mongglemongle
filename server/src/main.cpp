@@ -9,21 +9,41 @@
 #include <memory>
 
 int main() {
-    monggle::AppConfig::init();
+    auto cfg = monggle::AppConfig::loadFromEnv();
+    cfg.log();
 
-    auto authService = std::make_shared<monggle::AuthService>();
-    auto eventBus = std::make_shared<monggle::EventBus>();
+    auto authService  = std::make_shared<monggle::AuthService>();
+    auto eventBus     = std::make_shared<monggle::EventBus>();
     auto entryService = std::make_shared<monggle::EntryService>(*authService, *eventBus);
 
     monggle::configureRoutes(entryService);
 
-    LOG_INFO << "monggle server starting on 0.0.0.0:8080";
-
     drogon::app()
-        .addListener("0.0.0.0", 8080)
-        .setThreadNum(0)            // 0 = hardware_concurrency
-        .setLogLevel(trantor::Logger::kInfo)
-        .run();
+        .createDbClient(
+            "mysql",
+            cfg.dbHost,
+            cfg.dbPort,
+            cfg.dbName,
+            cfg.dbUser,
+            cfg.dbPassword,
+            cfg.dbPoolSize,
+            "",                 // filename (sqlite only)
+            "monggle_db",       // client name
+            false,              // auto batch (postgres only)
+            "utf8mb4")
+        .createRedisClient(
+            cfg.redisHost,
+            cfg.redisPort,
+            "monggle_redis",    // client name
+            "",                 // password
+            cfg.redisPoolSize,
+            true,               // is fast
+            0)                  // db index
+        .addListener(cfg.httpHost, cfg.httpPort)
+        .setThreadNum(0)
+        .setLogLevel(trantor::Logger::kInfo);
 
+    LOG_INFO << "monggle server listening on " << cfg.httpHost << ":" << cfg.httpPort;
+    drogon::app().run();
     return 0;
 }

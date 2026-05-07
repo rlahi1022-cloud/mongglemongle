@@ -1,0 +1,39 @@
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: monggle-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: root_dev
+      MARIADB_DATABASE: monggle
+      MARIADB_USER: monggle
+      MARIADB_PASSWORD: monggle_dev
+    ports:
+      - "3306:3306"
+    volumes:
+      - monggle_mariadb_data:/var/lib/mysql
+      - ./server/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: monggle-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - monggle_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  monggle_mariadb_data:
+  monggle_redis_data:
