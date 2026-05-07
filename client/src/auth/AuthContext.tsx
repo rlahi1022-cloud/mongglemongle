@@ -9,6 +9,7 @@ interface AuthState {
   signup: (email: string, password: string, displayName: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -74,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ userId, displayName, email, loading, signup, login, logout }}>
+    <Ctx.Provider value={{ userId, displayName, email, loading, signup, login, logout, refreshProfile }}>
       {children}
     </Ctx.Provider>
   );

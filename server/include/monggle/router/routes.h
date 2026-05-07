@@ -10,6 +10,8 @@ class SnapshotService;
 class FollowsService;
 class MediaService;
 class ProfileService;
+class CommentsService;
+class NotificationsService;
 
 void configureHealthRoutes();
 void configureAuthRoutes(std::shared_ptr<AuthService> authService);
@@ -18,7 +20,12 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
 void configureSnapshotRoutes(std::shared_ptr<AuthService> authService,
                              std::shared_ptr<SnapshotService> snapshotService);
 void configureFollowsRoutes(std::shared_ptr<AuthService> authService,
-                            std::shared_ptr<FollowsService> followsService);
+                            std::shared_ptr<FollowsService> followsService,
+                            std::shared_ptr<NotificationsService> notif = nullptr);
+void configureCommentsRoutes(std::shared_ptr<AuthService> authService,
+                             std::shared_ptr<CommentsService> commentsService);
+void configureNotificationsRoutes(std::shared_ptr<AuthService> authService,
+                                  std::shared_ptr<NotificationsService> notif);
 void configureMediaRoutes(std::shared_ptr<AuthService> authService,
                           std::shared_ptr<FollowsService> followsService,
                           std::shared_ptr<MediaService> mediaService,

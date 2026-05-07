@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PostCard } from "@/components/PostCard";
+import { EditPostDialog } from "@/components/EditPostDialog";
 import { ApiError, posts, type Post } from "@/api/client";
 import { cn } from "@/lib/utils";
 
@@ -22,17 +23,15 @@ export function MyTimelinePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState<number | null>(null);
+  const [editing, setEditing] = useState<Post | null>(null);
 
   const load = async (cur?: number) => {
     setLoading(true);
     setError(null);
     try {
       const page = await posts.myTimeline(cur);
-      if (cur) {
-        setItems((prev) => [...prev, ...page.items]);
-      } else {
-        setItems(page.items);
-      }
+      if (cur) setItems((prev) => [...prev, ...page.items]);
+      else     setItems(page.items);
       setCursor(page.next_cursor);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "타임라인 로드 실패");
@@ -50,11 +49,16 @@ export function MyTimelinePage() {
     }
   };
 
+  const onSaved = (updated: Post) => {
+    setItems((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    setEditing(null);
+  };
+
   return (
     <div className="space-y-5 max-w-3xl mx-auto">
       <div className="cloud-card px-5 py-4">
         <h1 className="text-2xl font-bold text-foreground">📓 내 글</h1>
-        <p className="text-foreground/70 text-sm mt-1">제목을 클릭하면 본문과 첨부 미디어가 펼쳐집니다.</p>
+        <p className="text-foreground/70 text-sm mt-1">제목을 클릭하면 본문과 첨부 미디어, 댓글이 펼쳐집니다.</p>
       </div>
       {error && <div className="cloud-card text-sm text-destructive font-medium px-4 py-2">{error}</div>}
       {items.length === 0 && !loading && (
@@ -65,35 +69,37 @@ export function MyTimelinePage() {
         </Card>
       )}
 
-      {/* 컴팩트 리스트 (제목 + 메타) → 클릭 시 풀 카드로 펼침 */}
       <div className="space-y-2">
         {items.map((p) => {
           const open = openId === p.id;
           if (open) {
             return (
-              <div key={p.id}>
-                <PostCard
-                  postId={p.id}
-                  authorId={p.user_id}
-                  authorName="나"
-                  title={p.title}
-                  body={p.body}
-                  visibility={p.visibility}
-                  createdAt={p.created_at}
-                  rightSlot={
-                    <>
-                      <Button size="sm" variant="ghost" className="rounded-2xl"
-                              onClick={(e) => { e.stopPropagation(); setOpenId(null); }}>
-                        접기
-                      </Button>
-                      <Button size="sm" variant="ghost" className="rounded-2xl text-destructive"
-                              onClick={(e) => { e.stopPropagation(); onDelete(p.id); }}>
-                        삭제
-                      </Button>
-                    </>
-                  }
-                />
-              </div>
+              <PostCard
+                key={p.id}
+                postId={p.id}
+                authorId={p.user_id}
+                authorName="나"
+                title={p.title}
+                body={p.body}
+                visibility={p.visibility}
+                createdAt={p.created_at}
+                rightSlot={
+                  <>
+                    <Button size="sm" variant="ghost" className="rounded-2xl"
+                            onClick={(e) => { e.stopPropagation(); setEditing(p); }}>
+                      수정
+                    </Button>
+                    <Button size="sm" variant="ghost" className="rounded-2xl"
+                            onClick={(e) => { e.stopPropagation(); setOpenId(null); }}>
+                      접기
+                    </Button>
+                    <Button size="sm" variant="ghost" className="rounded-2xl text-destructive"
+                            onClick={(e) => { e.stopPropagation(); onDelete(p.id); }}>
+                      삭제
+                    </Button>
+                  </>
+                }
+              />
             );
           }
           return (
@@ -131,6 +137,14 @@ export function MyTimelinePage() {
             {loading ? "..." : "더 불러오기"}
           </Button>
         </div>
+      )}
+
+      {editing && (
+        <EditPostDialog
+          initial={editing}
+          onClose={() => setEditing(null)}
+          onSaved={onSaved}
+        />
       )}
     </div>
   );

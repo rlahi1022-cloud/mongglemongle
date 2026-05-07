@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { media as mediaApi, profile as profileApi, type PostMedia } from "@/api/client";
+import { CommentsSection } from "@/components/CommentsSection";
 
 const visBadge: Record<string, string> = {
   public: "bg-sky-100 text-sky-700",
@@ -22,9 +23,13 @@ interface Props {
   visibility: string;
   createdAt: string;
   rightSlot?: React.ReactNode;
+  showComments?: boolean;
 }
 
-export function PostCard({ postId, authorId, authorName, title, body, visibility, createdAt, rightSlot }: Props) {
+export function PostCard({
+  postId, authorId, authorName, title, body, visibility, createdAt, rightSlot,
+  showComments = true,
+}: Props) {
   const [items, setItems] = useState<PostMedia[]>([]);
   const [avatarOk, setAvatarOk] = useState(true);
 
@@ -33,7 +38,7 @@ export function PostCard({ postId, authorId, authorName, title, body, visibility
     let canceled = false;
     mediaApi.listForPost(postId)
       .then((r) => { if (!canceled) setItems(r.items); })
-      .catch(() => { /* ignore */ });
+      .catch(() => {});
     return () => { canceled = true; };
   }, [postId]);
 
@@ -99,6 +104,7 @@ export function PostCard({ postId, authorId, authorName, title, body, visibility
             ))}
           </div>
         )}
+        {showComments && postId && <CommentsSection postId={postId} />}
       </CardContent>
     </Card>
   );

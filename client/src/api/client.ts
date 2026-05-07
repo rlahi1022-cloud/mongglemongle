@@ -267,8 +267,54 @@ export const profile = {
       method: "PATCH",
       body: JSON.stringify({ display_name }),
     }),
+  changePassword: (oldPw: string, newPw: string) =>
+    api<void>("/me/password", {
+      method: "PATCH",
+      body: JSON.stringify({ old_password: oldPw, new_password: newPw }),
+    }),
+  verifyPassword: (password: string) =>
+    api<{ ok: boolean }>("/me/verify-password", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
   avatarUrl: (userId: number, bust?: number) =>
     `${API_BASE}/users/${userId}/avatar${bust ? `?v=${bust}` : ""}`,
+};
+
+export interface CommentItem {
+  id: number;
+  post_id: number;
+  user_id: number;
+  body: string;
+  author_name: string;
+  created_at: string;
+}
+
+export const comments = {
+  list: (postId: number) => api<{ items: CommentItem[] }>(`/posts/${postId}/comments`),
+  create: (postId: number, body: string) =>
+    api<CommentItem>(`/posts/${postId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    }),
+  remove: (commentId: number) =>
+    api<void>(`/comments/${commentId}`, { method: "DELETE" }),
+};
+
+export interface Notification {
+  id: number;
+  kind: "follow" | "comment" | string;
+  actor_id: number | null;
+  target_id: number | null;
+  body: string;
+  is_read: boolean;
+  created_at: string;
+  actor_name: string;
+}
+
+export const notifications = {
+  recent: () => api<{ items: Notification[]; unread: number }>("/me/notifications"),
+  markAllRead: () => api<void>("/me/notifications/read", { method: "POST" }),
 };
 
 export interface PostMedia {

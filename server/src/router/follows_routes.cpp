@@ -1,6 +1,7 @@
 #include "monggle/router/routes.h"
 #include "monggle/auth/auth_service.h"
 #include "monggle/follows/follows_service.h"
+#include "monggle/notifications/notifications_service.h"
 
 #include <drogon/drogon.h>
 #include <json/json.h>
@@ -73,12 +74,13 @@ Json::Value userBriefToJson(const UserBrief& u) {
 } // namespace
 
 void configureFollowsRoutes(std::shared_ptr<AuthService> authService,
-                            std::shared_ptr<FollowsService> followsService) {
+                            std::shared_ptr<FollowsService> followsService,
+                            std::shared_ptr<NotificationsService> notif) {
     // POST /users/{id}/follow, DELETE /users/{id}/follow
     drogon::app().registerHandlerViaRegex(
         "^/users/([0-9]+)/follow$",
-        [authService, followsService](const drogon::HttpRequestPtr& req,
-                                      std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+        [authService, followsService, notif](const drogon::HttpRequestPtr& req,
+                                             std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
             auto path = req->getPath();
             auto userId = requireAuth(authService, req, cb, path);
             if (!userId) return;
@@ -95,6 +97,10 @@ void configureFollowsRoutes(std::shared_ptr<AuthService> authService,
                 if (auto* e = std::get_if<FollowError>(&r)) {
                     cb(followErrorResponse(*e, path));
                 } else {
+                    if (notif) {
+                        notif->enqueue(targetId, "follow", *userId, std::nullopt,
+                                       "새 팔로워가 생겼어요");
+                    }
                     auto resp = drogon::HttpResponse::newHttpResponse();
                     resp->setStatusCode(drogon::k204NoContent);
                     cb(resp);

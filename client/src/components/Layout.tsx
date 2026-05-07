@@ -1,17 +1,26 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/auth/AuthContext";
 import { profile } from "@/api/client";
 import { THEMES, useTheme } from "@/theme/ThemeContext";
+import { NotificationsBell } from "@/components/NotificationsBell";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   cn(
     "px-3 py-1.5 rounded-2xl text-sm transition-all whitespace-nowrap",
     isActive
       ? "bg-primary text-primary-foreground shadow"
-      : "text-foreground/70 hover:bg-secondary hover:text-foreground"
+      : "text-primary/85 hover:bg-white/40 hover:text-primary"
+  );
+
+const mobileNavClass = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    "block px-4 py-2.5 rounded-2xl text-sm transition-all",
+    isActive
+      ? "bg-primary text-primary-foreground"
+      : "text-foreground/80 hover:bg-secondary"
   );
 
 export function Layout() {
@@ -19,6 +28,7 @@ export function Layout() {
   const { theme, setTheme } = useTheme();
   const nav = useNavigate();
   const [themeOpen, setThemeOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [bust] = useState(Date.now());
 
   return (
@@ -26,9 +36,19 @@ export function Layout() {
       <div className="starfield" aria-hidden />
       <div className="starfield-extra" aria-hidden />
 
-      {/* 상단 헤더 — 한 줄 */}
-      <header className="relative z-20 bg-white/85 backdrop-blur-xl border-b border-white/40 shadow-sm">
-        <div className="container flex h-16 items-center gap-4">
+      <header className="relative z-20 bg-primary/15 backdrop-blur-2xl border-b border-primary/20 shadow-sm">
+        <div className="container flex h-16 items-center gap-3">
+          {/* 모바일 햄버거 */}
+          <button
+            className="md:hidden p-2 rounded-xl hover:bg-secondary"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label="메뉴"
+          >
+            <span className="block w-5 h-0.5 bg-foreground mb-1" />
+            <span className="block w-5 h-0.5 bg-foreground mb-1" />
+            <span className="block w-5 h-0.5 bg-foreground" />
+          </button>
+
           <Link to="/" className="flex items-center gap-2 shrink-0">
             <img
               src="/mascot.png"
@@ -36,10 +56,11 @@ export function Layout() {
               className="w-10 h-10 animate-float select-none"
               draggable={false}
             />
-            <span className="text-lg font-bold tracking-tight">몽글몽글</span>
+            <span className="text-lg font-bold tracking-tight hidden sm:inline">몽글몽글</span>
           </Link>
 
-          <nav className="flex items-center gap-1 ml-2">
+          {/* 데스크톱 메뉴 */}
+          <nav className="hidden md:flex items-center gap-1 ml-2">
             <NavLink to="/feed" className={navClass}>☁️ 피드</NavLink>
             <NavLink to="/me/timeline" className={navClass}>📓 내 글</NavLink>
             <NavLink to="/snapshot" className={navClass}>⏳ 시점 복원</NavLink>
@@ -48,8 +69,10 @@ export function Layout() {
 
           <div className="flex-1" />
 
+          {userId && <NotificationsBell />}
+
           {/* 테마 선택 */}
-          <div className="relative">
+          <div className="relative hidden sm:block">
             <Button
               variant="ghost"
               size="sm"
@@ -57,7 +80,7 @@ export function Layout() {
               onClick={() => setThemeOpen((v) => !v)}
               title="테마 변경"
             >
-              {theme.emoji} {theme.label}
+              {theme.emoji} <span className="hidden lg:inline ml-1">{theme.label}</span>
             </Button>
             {themeOpen && (
               <div
@@ -81,7 +104,6 @@ export function Layout() {
             )}
           </div>
 
-          {/* 프로필 — 클릭하면 프로필 수정 페이지 */}
           {userId && (
             <Link
               to="/profile"
@@ -99,7 +121,7 @@ export function Layout() {
                   {(displayName ?? "?").trim().charAt(0).toUpperCase() || "?"}
                 </span>
               </div>
-              <div className="leading-tight text-sm hidden md:block">
+              <div className="leading-tight text-sm hidden lg:block">
                 <div className="font-medium">{displayName ?? `user #${userId}`}</div>
                 <div className="text-xs text-muted-foreground">#{userId}</div>
               </div>
@@ -108,15 +130,33 @@ export function Layout() {
           <Button
             variant="ghost"
             size="sm"
-            className="rounded-2xl"
+            className="rounded-2xl hidden sm:inline-flex"
             onClick={async () => { await logout(); nav("/login"); }}
           >
             로그아웃
           </Button>
         </div>
+
+        {/* 모바일 드로어 */}
+        {menuOpen && (
+          <div className="md:hidden border-t bg-white/95 backdrop-blur">
+            <div className="container py-3 space-y-1">
+              <NavLink to="/feed" className={mobileNavClass} onClick={() => setMenuOpen(false)}>☁️ 피드</NavLink>
+              <NavLink to="/me/timeline" className={mobileNavClass} onClick={() => setMenuOpen(false)}>📓 내 글</NavLink>
+              <NavLink to="/snapshot" className={mobileNavClass} onClick={() => setMenuOpen(false)}>⏳ 시점 복원</NavLink>
+              <NavLink to="/search" className={mobileNavClass} onClick={() => setMenuOpen(false)}>🔍 검색</NavLink>
+              <NavLink to="/profile" className={mobileNavClass} onClick={() => setMenuOpen(false)}>👤 프로필</NavLink>
+              <button
+                onClick={async () => { setMenuOpen(false); await logout(); nav("/login"); }}
+                className="block w-full text-left px-4 py-2.5 rounded-2xl text-sm text-destructive hover:bg-destructive/10"
+              >
+                로그아웃
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
-      {/* 본문 */}
       <main className="relative z-10 flex-1">
         <div className="container py-6">
           <Outlet />

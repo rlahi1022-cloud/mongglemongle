@@ -39,6 +39,14 @@ public:
     // 표시 이름 변경 (프로필 수정 페이지에서 사용)
     PResult<bool> updateDisplayName(std::int64_t userId, const std::string& newName);
 
+    // 비밀번호 변경 — 기존 비번 검증 후 새 해시로 교체
+    PResult<bool> changePassword(std::int64_t userId,
+                                  const std::string& oldPassword,
+                                  const std::string& newPassword);
+
+    // 비밀번호 검증만 (변경 안 함). 프로필 수정 게이트용.
+    bool verifyPassword(std::int64_t userId, const std::string& password);
+
     // GET /users/{id}/avatar 용 절대 디스크 경로.
     std::optional<std::string> avatarFile(std::int64_t userId);
 

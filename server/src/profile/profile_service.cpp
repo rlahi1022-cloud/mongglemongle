@@ -1,4 +1,5 @@
 #include "monggle/profile/profile_service.h"
+#include "monggle/auth/password_service.h"
 
 #include <drogon/drogon.h>
 #include <drogon/orm/DbClient.h>
@@ -103,6 +104,34 @@ PResult<std::string> ProfileService::updateAvatar(std::int64_t userId,
     }
 }
 
+PResult<bool> ProfileService::changePassword(std::int64_t userId,
+                                              const std::string& oldPassword,
+                                              const std::string& newPassword) {
+    if (newPassword.size() < 4)  return ProfileError{ProfileError::BadRequest, "new password too short"};
+    if (newPassword.size() > 100) return ProfileError{ProfileError::BadRequest, "new password too long"};
+    try {
+        auto rows = db()->execSqlSync(
+            "SELECT password_hash FROM users WHERE id = ? LIMIT 1", userId);
+        if (rows.size() == 0) return ProfileError{ProfileError::NotFound, "user not found"};
+        auto hashed = rows[0]["password_hash"].as<std::string>();
+        if (!PasswordService::verify(oldPassword, hashed)) {
+            return ProfileError{ProfileError::BadRequest, "current password mismatch"};
+        }
+        auto newHash = PasswordService::hash(newPassword);
+        db()->execSqlSync(
+            "UPDATE users SET password_hash = ? WHERE id = ?", newHash, userId);
+        // 모든 refresh token 무효화 (회전 강제)
+        try {
+            db()->execSqlSync(
+                "UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ? AND revoked = 0",
+                userId);
+        } catch (...) {}
+        return true;
+    } catch (const std::exception& e) {
+        return ProfileError{ProfileError::InternalError, e.what()};
+    }
+}
+
 PResult<bool> ProfileService::updateDisplayName(std::int64_t userId, const std::string& newName) {
     if (newName.empty())          return ProfileError{ProfileError::BadRequest, "name required"};
     if (newName.size() > 100)     return ProfileError{ProfileError::BadRequest, "name too long"};
@@ -113,6 +142,15 @@ PResult<bool> ProfileService::updateDisplayName(std::int64_t userId, const std::
     } catch (const std::exception& e) {
         return ProfileError{ProfileError::InternalError, e.what()};
     }
+}
+
+bool ProfileService::verifyPassword(std::int64_t userId, const std::string& password) {
+    try {
+        auto rows = db()->execSqlSync(
+            "SELECT password_hash FROM users WHERE id = ? LIMIT 1", userId);
+        if (rows.size() == 0) return false;
+        return PasswordService::verify(password, rows[0]["password_hash"].as<std::string>());
+    } catch (...) { return false; }
 }
 
 std::optional<std::string> ProfileService::avatarFile(std::int64_t userId) {

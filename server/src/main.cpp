@@ -1,11 +1,13 @@
 #include "monggle/app_config.h"
 #include "monggle/auth/auth_service.h"
 #include "monggle/auth/jwt_service.h"
+#include "monggle/comments/comments_service.h"
 #include "monggle/follows/follows_service.h"
 #include "monggle/media/media_service.h"
 #include "monggle/middleware/cors.h"
 #include "monggle/middleware/rate_limiter.h"
 #include "monggle/middleware/request_log.h"
+#include "monggle/notifications/notifications_service.h"
 #include "monggle/posts/posts_service.h"
 #include "monggle/posts/snapshot_service.h"
 #include "monggle/profile/profile_service.h"
@@ -32,6 +34,8 @@ int main() {
     auto snapshotService = std::make_shared<monggle::SnapshotService>();
     auto mediaService    = std::make_shared<monggle::MediaService>(cfg.mediaStorageRoot, followsService);
     auto profileService  = std::make_shared<monggle::ProfileService>(cfg.mediaStorageRoot);
+    auto notifService    = std::make_shared<monggle::NotificationsService>();
+    auto commentsService = std::make_shared<monggle::CommentsService>(followsService, notifService);
 
     // CORS는 라우트 등록 전에 설치
     monggle::installCors(monggle::defaultDevCors());
@@ -44,9 +48,11 @@ int main() {
     monggle::configureAuthRoutes(authService);
     monggle::configurePostsRoutes(authService, postsService);
     monggle::configureSnapshotRoutes(authService, snapshotService);
-    monggle::configureFollowsRoutes(authService, followsService);
+    monggle::configureFollowsRoutes(authService, followsService, notifService);
     monggle::configureMediaRoutes(authService, followsService, mediaService, cfg.mediaStorageRoot);
     monggle::configureProfileRoutes(authService, profileService);
+    monggle::configureCommentsRoutes(authService, commentsService);
+    monggle::configureNotificationsRoutes(authService, notifService);
 
     drogon::app()
         .createDbClient(

@@ -78,17 +78,19 @@ void configureProfileRoutes(std::shared_ptr<AuthService> authService,
             }
             const auto& f = files[0];
 
-            // 확장자에서 mime 추론 (Drogon 1.8.7 HttpFile 한계)
+            // 확장자에서 mime 추정. 모르면 image/* 로 가정해 OpenCV가 직접 판단하도록 위임.
             auto guessMime = [](const std::string& fname) -> std::string {
                 auto dot = fname.rfind('.');
-                if (dot == std::string::npos) return "application/octet-stream";
+                if (dot == std::string::npos) return "image/jpeg";
                 std::string ext = fname.substr(dot + 1);
                 for (auto& c : ext) c = std::tolower(c);
                 if (ext == "jpg" || ext == "jpeg") return "image/jpeg";
                 if (ext == "png")                  return "image/png";
                 if (ext == "webp")                 return "image/webp";
                 if (ext == "gif")                  return "image/gif";
-                return "application/octet-stream";
+                if (ext == "bmp")                  return "image/bmp";
+                if (ext == "heic" || ext == "heif") return "image/heic";
+                return "image/jpeg";   // OpenCV imdecode가 magic bytes로 자동 판단
             };
             std::string mime = guessMime(f.getFileName());
 
@@ -132,6 +134,67 @@ void configureProfileRoutes(std::shared_ptr<AuthService> authService,
             cb(drogon::HttpResponse::newHttpJsonResponse(body));
         },
         {drogon::Patch});
+
+    // PATCH /me/password — 비밀번호 변경 (기존 비번 검증)
+    drogon::app().registerHandler(
+        "/me/password",
+        [authService, profileService](
+            const drogon::HttpRequestPtr& req,
+            std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+            auto userId = authService->verifyAccess(std::string(req->getHeader("Authorization")));
+            if (!userId) {
+                cb(problemJson(drogon::k401Unauthorized, "unauthorized",
+                               "valid Bearer access token required", "/me/password"));
+                return;
+            }
+            auto json = req->getJsonObject();
+            if (!json
+                || !json->isMember("old_password") || !(*json)["old_password"].isString()
+                || !json->isMember("new_password") || !(*json)["new_password"].isString()) {
+                cb(problemJson(drogon::k400BadRequest, "bad_request",
+                               "old_password and new_password (string) required", "/me/password"));
+                return;
+            }
+            auto r = profileService->changePassword(
+                *userId,
+                (*json)["old_password"].asString(),
+                (*json)["new_password"].asString());
+            if (auto* e = std::get_if<ProfileError>(&r)) {
+                cb(profileErrorResponse(*e, "/me/password"));
+            } else {
+                auto resp = drogon::HttpResponse::newHttpResponse();
+                resp->setStatusCode(drogon::k204NoContent);
+                cb(resp);
+            }
+        },
+        {drogon::Patch});
+
+    // POST /me/verify-password — 프로필 수정 잠금 해제용 (변경 X, 검증만)
+    drogon::app().registerHandler(
+        "/me/verify-password",
+        [authService, profileService](
+            const drogon::HttpRequestPtr& req,
+            std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+            auto userId = authService->verifyAccess(std::string(req->getHeader("Authorization")));
+            if (!userId) {
+                cb(problemJson(drogon::k401Unauthorized, "unauthorized",
+                               "valid Bearer access token required", "/me/verify-password"));
+                return;
+            }
+            auto json = req->getJsonObject();
+            if (!json || !json->isMember("password") || !(*json)["password"].isString()) {
+                cb(problemJson(drogon::k400BadRequest, "bad_request",
+                               "password (string) required", "/me/verify-password"));
+                return;
+            }
+            bool ok = profileService->verifyPassword(*userId, (*json)["password"].asString());
+            Json::Value body;
+            body["ok"] = ok;
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+            resp->setStatusCode(ok ? drogon::k200OK : drogon::k401Unauthorized);
+            cb(resp);
+        },
+        {drogon::Post});
 
     // GET /users/{id}/avatar — 공개. 없으면 404 → 프론트는 첫 글자 fallback.
     drogon::app().registerHandlerViaRegex(
