@@ -12,6 +12,15 @@ drogon::orm::DbClientPtr db() {
     return drogon::app().getDbClient("monggle_db");
 }
 
+bool isBlockedPair(std::int64_t a, std::int64_t b) {
+    if (a <= 0 || b <= 0 || a == b) return false;
+    auto rows = db()->execSqlSync(
+        "SELECT 1 FROM blocks WHERE "
+        "(blocker_id=? AND blocked_id=?) OR (blocker_id=? AND blocked_id=?) LIMIT 1",
+        a, b, b, a);
+    return rows.size() > 0;
+}
+
 } // namespace
 
 FResult<bool> FollowsService::follow(std::int64_t followerId, std::int64_t followeeId) {
@@ -23,6 +32,10 @@ FResult<bool> FollowsService::follow(std::int64_t followerId, std::int64_t follo
             "SELECT 1 FROM users WHERE id = ? LIMIT 1", followeeId);
         if (exists.size() == 0) {
             return FollowError{FollowError::NotFound, "target user not found"};
+        }
+
+        if (isBlockedPair(followerId, followeeId)) {
+            return FollowError{FollowError::BadRequest, "blocked users cannot follow each other"};
         }
 
         auto already = db()->execSqlSync(
@@ -77,8 +90,10 @@ FResult<std::vector<UserBrief>> FollowsService::listFollowers(std::int64_t userI
             "SELECT u.id, u.email, u.display_name "
             "FROM follows f JOIN users u ON u.id = f.follower_id "
             "WHERE f.followee_id = ? "
+            "  AND u.id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?) "
+            "  AND u.id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id = ?) "
             "ORDER BY f.created_at DESC LIMIT ?",
-            userId, limit);
+            userId, userId, userId, limit);
         std::vector<UserBrief> out;
         out.reserve(rows.size());
         for (const auto& r : rows) {
@@ -101,8 +116,10 @@ FResult<std::vector<UserBrief>> FollowsService::listFollowing(std::int64_t userI
             "SELECT u.id, u.email, u.display_name "
             "FROM follows f JOIN users u ON u.id = f.followee_id "
             "WHERE f.follower_id = ? "
+            "  AND u.id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?) "
+            "  AND u.id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id = ?) "
             "ORDER BY f.created_at DESC LIMIT ?",
-            userId, limit);
+            userId, userId, userId, limit);
         std::vector<UserBrief> out;
         out.reserve(rows.size());
         for (const auto& r : rows) {

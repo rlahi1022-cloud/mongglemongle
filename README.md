@@ -41,9 +41,9 @@
 | **DB** | MariaDB 11 | Drogon ORM execSqlSync + 트랜잭션 |
 | **미디어** | OpenCV 4.6 (썸네일) + ffmpeg (영상 첫프레임) | MVP는 로컬 파일시스템 |
 | **클라이언트** | React 18 + Vite 5 + Tailwind 3 + shadcn/ui (TS) | |
-| **로컬 인프라** | Docker Compose (mariadb + redis) | |
-| **운영 인프라(예정)** | AWS RDS + ElastiCache + S3 + CloudFront | 기획 14장 |
-| **AI 허브(보류)** | Python + BGE-m3 + LLM | MVP 검색은 LIKE |
+| **로컬 인프라** | Docker Compose (MariaDB + Redis + MinIO + AI Hub) | 백엔드는 아직 DB 중심 |
+| **운영 인프라(예정)** | AWS RDS + ElastiCache + S3 + CloudFront | Terraform 스켈레톤 |
+| **AI 허브** | Python FastAPI stub | MVP 검색은 LIKE |
 
 ---
 
@@ -54,11 +54,14 @@
 ├── doc/                  ← 기획서 PDF, 마스코트, 다이어그램
 ├── docs/
 │   └── DEVLOG.md         ← 개발 일지
-├── docker-compose.yml    ← mariadb + redis 로컬 인프라
+├── docker-compose.yml    ← MariaDB, Redis, MinIO, AI Hub 로컬 인프라
 ├── server/               ← C++ 백엔드
 │   ├── include/monggle/
 │   │   ├── auth/         JwtService, PasswordService, AuthService
 │   │   ├── follows/      FollowsService
+│   │   ├── blocks/       BlocksService
+│   │   ├── comments/     CommentsService
+│   │   ├── notifications/NotificationsService
 │   │   ├── media/        MediaService (사진/영상)
 │   │   ├── middleware/   cors, rate_limiter, request_log
 │   │   ├── posts/        PostsService, SnapshotService
@@ -72,7 +75,7 @@
 │       ├── api/          백엔드 fetch 래퍼 (auth 자동, refresh 회전)
 │       ├── auth/         AuthContext, ProtectedRoute
 │       ├── components/   Layout(사이드바), PostCard, ui/*
-│       └── pages/        Login, Signup, Feed, MyTimeline, Snapshot, Search
+│       └── pages/        Login, Signup, Feed, MyTimeline, Snapshot, Search, Profile
 ├── scripts/gen_dev_jwt_keys.sh
 └── CMakeLists.txt
 ```
@@ -117,10 +120,10 @@ sudo usermod -aG docker $USER  # 로그아웃/재로그인 필요
 
 ```bash
 docker compose up -d
-docker compose ps           # 두 컨테이너 모두 (healthy)
+docker compose ps           # mariadb/redis/minio/ai-hub 상태 확인
 ```
 
-첫 기동 시 `server/sql/00*.sql`이 자동 실행되어 10개 테이블이 생성됩니다.
+첫 기동 시 `server/sql/00*.sql`이 자동 실행되어 인증, 글, 미디어, 댓글, 알림, 차단 관련 테이블이 생성됩니다.
 
 ### 4. 백엔드 빌드 & 실행
 
@@ -183,7 +186,20 @@ npm run dev               # → http://127.0.0.1:5173
 | Method | Path | 설명 |
 |---|---|---|
 | PUT | `/me/avatar` | multipart 업로드 → OpenCV 정사각형 256x256 jpg |
+| PATCH | `/me` | 표시 이름 변경 |
+| PATCH | `/me/password` | 비밀번호 변경 |
+| POST | `/me/verify-password` | 프로필 수정 전 비밀번호 확인 |
 | GET | `/users/{id}/avatar` | 공개 — 없으면 404 (프론트는 첫 글자 fallback) |
+
+### 댓글 / 알림 / 차단
+| Method | Path | 설명 |
+|---|---|---|
+| GET / POST | `/posts/{id}/comments` | 댓글 목록 / 작성 |
+| DELETE | `/comments/{id}` | 본인 댓글 삭제 |
+| GET | `/me/notifications` | 최근 알림 + 미읽음 수 |
+| POST | `/me/notifications/read` | 알림 전체 읽음 처리 |
+| POST / DELETE | `/users/{id}/block` | 차단 / 차단 해제 |
+| GET | `/me/blocks` | 차단 목록 |
 
 ### 운영
 | Method | Path | 설명 |
@@ -191,6 +207,18 @@ npm run dev               # → http://127.0.0.1:5173
 | GET | `/healthz` | 프로세스 헬스 |
 | GET | `/readyz` | DB ping (Redis는 후속) |
 | OPTIONS | `*` | CORS preflight (Vite/Next dev 허용) |
+
+---
+
+## 현재 보류한 것
+
+| 항목 | 상태 |
+|---|---|
+| S3/MinIO 직접 업로드 + 서명 URL | Compose에는 MinIO가 있으나 백엔드는 로컬 FS 사용 |
+| Redis L2 캐시 + Push fanout | Drogon RedisClient 이슈로 readyz Redis ping도 보류 |
+| AI 임베딩 검색 | AI Hub는 stub, 실제 검색은 LIKE |
+| 스냅샷 워커 | 시점 복원은 현재 이벤트를 처음부터 재생 |
+| 부하 테스트 / 운영 배포 | Terraform 스켈레톤만 있음 |
 
 ---
 

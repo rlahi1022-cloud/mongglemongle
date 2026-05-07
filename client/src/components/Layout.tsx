@@ -1,6 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/auth/AuthContext";
 import { profile } from "@/api/client";
 import { THEMES, useTheme } from "@/theme/ThemeContext";

@@ -23,7 +23,7 @@ export function EditPostDialog({ initial, onClose, onSaved }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const patch: any = {};
+      const patch: Partial<Pick<Post, "title" | "body" | "visibility">> = {};
       if (title !== (initial.title ?? "")) patch.title = title;
       if (body !== initial.body)            patch.body = body;
       if (visibility !== initial.visibility) patch.visibility = visibility;

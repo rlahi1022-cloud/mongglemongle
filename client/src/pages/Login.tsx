@@ -11,7 +11,9 @@ export function LoginPage() {
   const { login, loading } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
-  const from = (loc.state as any)?.from || "/feed";
+  const from = typeof loc.state === "object" && loc.state !== null && "from" in loc.state
+    ? String((loc.state as { from?: unknown }).from || "/feed")
+    : "/feed";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

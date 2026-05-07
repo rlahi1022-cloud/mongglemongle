@@ -1,4 +1,5 @@
 #include "monggle/posts/posts_service.h"
+#include "monggle/blocks/blocks_service.h"
 #include "monggle/follows/follows_service.h"
 
 #include <drogon/drogon.h>
@@ -66,8 +67,9 @@ Post rowToPost(const drogon::orm::Row& row) {
 }
 
 // 권한 매트릭스 (기획 8.2). 'friends' = follower 관계 (단방향).
-bool canView(std::int64_t viewerId, const Post& p, FollowsService* follows) {
+bool canView(std::int64_t viewerId, const Post& p, FollowsService* follows, BlocksService* blocks) {
     if (viewerId == p.userId) return true;
+    if (blocks && viewerId > 0 && blocks->isBlocked(viewerId, p.userId)) return false;
     switch (p.visibility) {
         case Visibility::Public:
             return true;
@@ -105,8 +107,9 @@ void insertEvent(const drogon::orm::DbClientPtr& tx,
 
 } // namespace
 
-PostsService::PostsService(std::shared_ptr<FollowsService> follows)
-    : follows_(std::move(follows)) {}
+PostsService::PostsService(std::shared_ptr<FollowsService> follows,
+                           std::shared_ptr<BlocksService> blocks)
+    : follows_(std::move(follows)), blocks_(std::move(blocks)) {}
 
 Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest& req) {
     if (req.body.empty()) {
@@ -160,7 +163,7 @@ Result<Post> PostsService::get(std::int64_t viewerId, std::int64_t postId) {
             return PostsError{PostsError::NotFound, "post not found"};
         }
         auto post = rowToPost(rows[0]);
-        if (!canView(viewerId, post, follows_.get())) {
+        if (!canView(viewerId, post, follows_.get(), blocks_.get())) {
             return PostsError{PostsError::Forbidden, "no permission to view this post"};
         }
         return post;
@@ -321,6 +324,9 @@ Result<TimelinePage> PostsService::timeline(std::int64_t viewerId, std::int64_t 
     if (limit <= 0 || limit > 100) limit = 20;
     try {
         const bool isOwner   = (viewerId == ownerId);
+        if (!isOwner && blocks_ && viewerId > 0 && blocks_->isBlocked(viewerId, ownerId)) {
+            return PostsError{PostsError::Forbidden, "blocked users cannot view this timeline"};
+        }
         const bool isFriend  = !isOwner && follows_ && viewerId > 0
                                 && follows_->isFollower(viewerId, ownerId);
         const int  fetchN    = limit + 1;  // 다음 cursor 판정용 +1

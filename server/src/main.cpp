@@ -31,13 +31,13 @@ int main() {
 
     auto authService     = std::make_shared<monggle::AuthService>(jwtService);
     auto followsService  = std::make_shared<monggle::FollowsService>();
-    auto postsService    = std::make_shared<monggle::PostsService>(followsService);
+    auto blocksService   = std::make_shared<monggle::BlocksService>();
+    auto postsService    = std::make_shared<monggle::PostsService>(followsService, blocksService);
     auto snapshotService = std::make_shared<monggle::SnapshotService>();
-    auto mediaService    = std::make_shared<monggle::MediaService>(cfg.mediaStorageRoot, followsService);
+    auto mediaService    = std::make_shared<monggle::MediaService>(cfg.mediaStorageRoot, followsService, blocksService);
     auto profileService  = std::make_shared<monggle::ProfileService>(cfg.mediaStorageRoot);
     auto notifService    = std::make_shared<monggle::NotificationsService>();
     auto commentsService = std::make_shared<monggle::CommentsService>(followsService, notifService);
-    auto blocksService   = std::make_shared<monggle::BlocksService>();
 
     // CORS는 라우트 등록 전에 설치
     monggle::installCors(monggle::defaultDevCors());

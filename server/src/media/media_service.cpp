@@ -1,4 +1,5 @@
 #include "monggle/media/media_service.h"
+#include "monggle/blocks/blocks_service.h"
 #include "monggle/follows/follows_service.h"
 
 #include <drogon/drogon.h>
@@ -152,18 +153,27 @@ std::optional<PostMeta> loadPostMeta(std::int64_t postId) {
     return m;
 }
 
-bool canViewPost(const ViewerContext& vc, const PostMeta& p) {
+bool canViewPost(const ViewerContext& vc, const PostMeta& p,
+                 FollowsService* follows, BlocksService* blocks) {
     if (vc.viewerId == p.userId) return true;
+    if (blocks && vc.viewerId > 0 && blocks->isBlocked(vc.viewerId, p.userId)) return false;
     if (p.visibility == "public")  return true;
-    if (p.visibility == "friends") return vc.isFollowerOfAuthor;
+    if (p.visibility == "friends") {
+        return vc.isFollowerOfAuthor ||
+               (follows && vc.viewerId > 0 && follows->isFollower(vc.viewerId, p.userId));
+    }
     return false; // private
 }
 
-bool canDownload(const ViewerContext& vc, const PostMeta& p) {
+bool canDownload(const ViewerContext& vc, const PostMeta& p,
+                 FollowsService* follows, BlocksService* blocks) {
     if (vc.viewerId == p.userId) return true;
-    if (!canViewPost(vc, p))    return false;
+    if (!canViewPost(vc, p, follows, blocks))    return false;
     if (p.downloadPolicy == "owner_only")     return false;
-    if (p.downloadPolicy == "followers")      return vc.isFollowerOfAuthor;
+    if (p.downloadPolicy == "followers") {
+        return vc.isFollowerOfAuthor ||
+               (follows && vc.viewerId > 0 && follows->isFollower(vc.viewerId, p.userId));
+    }
     if (p.downloadPolicy == "public_allowed") return p.visibility == "public";
     return false;
 }
@@ -190,8 +200,11 @@ MediaAsset rowToMedia(const drogon::orm::Row& r) {
 } // namespace
 
 MediaService::MediaService(std::string storageRoot,
-                           std::shared_ptr<FollowsService> follows)
-    : storageRoot_(std::move(storageRoot)), follows_(std::move(follows)) {
+                           std::shared_ptr<FollowsService> follows,
+                           std::shared_ptr<BlocksService> blocks)
+    : storageRoot_(std::move(storageRoot)),
+      follows_(std::move(follows)),
+      blocks_(std::move(blocks)) {
     ensureDir(storageRoot_);
 }
 
@@ -305,7 +318,8 @@ MResult<MediaAsset> MediaService::getForView(const ViewerContext& vc, std::int64
 
         auto post = loadPostMeta(m.postId);
         if (!post || post->deleted) return MediaError{MediaError::NotFound, "media not found"};
-        if (!canViewPost(vc, *post)) return MediaError{MediaError::Forbidden, "no permission"};
+        if (!canViewPost(vc, *post, follows_.get(), blocks_.get()))
+            return MediaError{MediaError::Forbidden, "no permission"};
         return m;
     } catch (const std::exception& e) {
         return MediaError{MediaError::InternalError, e.what()};
@@ -316,7 +330,8 @@ MResult<std::vector<MediaAsset>> MediaService::listForPost(const ViewerContext& 
     try {
         auto post = loadPostMeta(postId);
         if (!post || post->deleted) return MediaError{MediaError::NotFound, "post not found"};
-        if (!canViewPost(vc, *post)) return MediaError{MediaError::Forbidden, "no permission"};
+        if (!canViewPost(vc, *post, follows_.get(), blocks_.get()))
+            return MediaError{MediaError::Forbidden, "no permission"};
 
         auto rows = db()->execSqlSync(
             "SELECT * FROM media_assets WHERE post_id = ? AND status = 'ready' ORDER BY id",
@@ -339,7 +354,7 @@ MResult<MediaAsset> MediaService::getForDownload(const ViewerContext& vc, std::i
 
         auto post = loadPostMeta(m.postId);
         if (!post || post->deleted) return MediaError{MediaError::NotFound, "media not found"};
-        if (!canDownload(vc, *post))
+        if (!canDownload(vc, *post, follows_.get(), blocks_.get()))
             return MediaError{MediaError::Forbidden, "download not allowed by author policy"};
         return m;
     } catch (const std::exception& e) {

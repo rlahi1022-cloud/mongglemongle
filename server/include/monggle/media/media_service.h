@@ -10,6 +10,7 @@
 namespace monggle {
 
 class FollowsService;
+class BlocksService;
 
 enum class MediaKind { Photo, Video };
 
@@ -49,7 +50,8 @@ class MediaService {
 public:
     // 미디어 저장 루트 (./media 또는 환경변수). 없으면 자동 생성.
     explicit MediaService(std::string storageRoot,
-                          std::shared_ptr<FollowsService> follows = nullptr);
+                          std::shared_ptr<FollowsService> follows = nullptr,
+                          std::shared_ptr<BlocksService> blocks = nullptr);
 
     // multipart upload — 한 번의 요청으로 메타+바이트 모두 전달.
     // postId 기준 권한 검사: postId의 owner == authorId 여야 함.
@@ -72,6 +74,7 @@ public:
 private:
     std::string storageRoot_;
     std::shared_ptr<FollowsService> follows_;
+    std::shared_ptr<BlocksService> blocks_;
 };
 
 } // namespace monggle

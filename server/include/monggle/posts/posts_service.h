@@ -10,6 +10,7 @@
 namespace monggle {
 
 class FollowsService;
+class BlocksService;
 
 enum class Visibility { Public, Friends, Private };
 enum class DownloadPolicy { OwnerOnly, Followers, PublicAllowed };
@@ -60,7 +61,8 @@ struct TimelinePage {
 
 class PostsService {
 public:
-    explicit PostsService(std::shared_ptr<FollowsService> follows = nullptr);
+    explicit PostsService(std::shared_ptr<FollowsService> follows = nullptr,
+                          std::shared_ptr<BlocksService> blocks = nullptr);
 
     Result<Post> create(std::int64_t authorId, const CreatePostRequest& req);
 
@@ -87,6 +89,7 @@ public:
 
 private:
     std::shared_ptr<FollowsService> follows_;
+    std::shared_ptr<BlocksService> blocks_;
 };
 
 } // namespace monggle

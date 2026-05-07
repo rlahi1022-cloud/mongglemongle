@@ -75,14 +75,17 @@ async function tryRefresh(): Promise<boolean> {
 }
 
 async function parseError(resp: Response): Promise<never> {
-  let payload: any = null;
+  let payload: unknown = null;
   try { payload = await resp.json(); } catch { /* */ }
-  const title = payload?.title || "request_failed";
-  const detail = payload?.detail || resp.statusText || "";
+  const problem = payload && typeof payload === "object"
+    ? payload as { title?: unknown; detail?: unknown }
+    : {};
+  const title = typeof problem.title === "string" ? problem.title : "request_failed";
+  const detail = typeof problem.detail === "string" ? problem.detail : resp.statusText || "";
   throw new ApiError(resp.status, title, detail, payload);
 }
 
-export async function api<T = any>(
+export async function api<T = unknown>(
   path: string,
   init: RequestInit & { useAuth?: boolean } = {}
 ): Promise<T> {

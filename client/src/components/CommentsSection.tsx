@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiError, comments, profile, type CommentItem } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -11,12 +11,13 @@ export function CommentsSection({ postId }: Props) {
   const { userId } = useAuth();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<CommentItem[]>([]);
+  const [loadedPostId, setLoadedPostId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [body, setBody] = useState("");
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -24,12 +25,15 @@ export function CommentsSection({ postId }: Props) {
       setItems(r.items);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "댓글 로드 실패");
-    } finally { setLoading(false); }
-  };
+    } finally {
+      setLoadedPostId(postId);
+      setLoading(false);
+    }
+  }, [postId]);
 
   useEffect(() => {
-    if (open && items.length === 0 && !loading) refresh();
-  }, [open]);
+    if (open && loadedPostId !== postId && !loading) refresh();
+  }, [loadedPostId, loading, open, postId, refresh]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
