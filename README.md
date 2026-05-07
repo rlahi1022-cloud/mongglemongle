@@ -6,7 +6,7 @@
 ## 기술 스택 (확정)
 - **백엔드**: C++17, Drogon 1.8 (HTTP), MariaDB 11, OpenCV 4.6 (썸네일), ffmpeg (포스터)
 - **인증**: JWT RS256 (cpp-jwt) + bcrypt (libxcrypt crypt_r)
-- **클라이언트**: React + Vite (예정)
+- **클라이언트**: React 18 + Vite 5 + Tailwind 3 + shadcn/ui (TypeScript)
 - **로컬 인프라**: Docker Compose (mariadb + redis)
 - **운영 인프라**: AWS (RDS Multi-AZ + ElastiCache + S3 + CloudFront, 후속)
 - **AI 허브**: Python BGE-m3 (보류 — MVP 검색은 LIKE)
@@ -23,7 +23,11 @@ server/
     router/      # routes.h
   src/...        # 위 헤더 구현
   sql/           # 001_init.sql, 002_auth.sql
-client/          # React 앱 (다음 단계)
+client/          # React 18 + Vite + Tailwind + shadcn/ui
+  src/api/       #   백엔드 fetch 래퍼 (auth 자동, refresh 회전)
+  src/auth/      #   AuthContext, ProtectedRoute
+  src/components/ #  Layout, PostCard, ui/* (button/input/card/...)
+  src/pages/     #   Login, Signup, Feed, MyTimeline, Snapshot, Search
 tests/           # 단위·통합 테스트 (예정)
 doc/             # 기획 문서
 docker-compose.yml
@@ -60,14 +64,23 @@ docker compose ps  # 두 컨테이너 모두 (healthy) 확인
 - 첫 기동 시 `server/sql/*.sql`이 자동 실행되어 10개 테이블 생성
 - 데이터는 docker volume에 영속
 
-### 4. 빌드 & 실행
+### 4. 백엔드 빌드 & 실행
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 cp .env.example .env  # 필요 시 수정
 set -a; source .env; set +a
-./build/mongglemonggle
+./build/mongglemonggle  # → 0.0.0.0:8080
 ```
+
+### 5. 프론트엔드 (별도 터미널)
+```bash
+cd client
+npm install      # 첫 1회 (Node 18+ 필요)
+npm run dev      # → http://127.0.0.1:5173
+```
+브라우저에서 회원가입 → 로그인 → 글 작성 → 시점 복원까지 동작.
+백엔드 CORS는 `127.0.0.1:5173`, `localhost:5173`, `localhost:3000`을 화이트리스트로 둠.
 
 ## API 엔드포인트 (현재)
 
@@ -94,6 +107,7 @@ set -a; source .env; set +a
 
 ### 친구 / 피드
 | Method | Path | 설명 |
+
 |---|---|---|
 | POST | `/users/{id}/follow` | 팔로우 (자기-팔로우 400, 중복 409) |
 | DELETE | `/users/{id}/follow` | 언팔로우 |
