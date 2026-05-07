@@ -349,13 +349,13 @@ function FriendsList() {
           {list?.map((u) => (
             <div key={u.id} className="flex items-center gap-3 px-3 py-2 rounded-2xl bg-secondary/50">
               <div className="relative h-9 w-9 shrink-0 rounded-full bg-white text-primary grid place-items-center text-sm font-bold overflow-hidden">
+                <span className="z-0">{u.display_name?.charAt(0)?.toUpperCase() || "?"}</span>
                 <img
                   src={profile.avatarUrl(u.id)}
                   alt=""
-                  className="absolute inset-0 w-full h-full object-cover"
+                  className="absolute inset-0 w-full h-full object-cover z-10"
                   onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
                 />
-                <span className="z-0">{u.display_name?.charAt(0)?.toUpperCase() || "?"}</span>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-medium truncate">{u.display_name}</div>
