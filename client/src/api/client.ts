@@ -239,6 +239,12 @@ export const social = {
   },
 };
 
+export interface MeProfile {
+  user_id: number;
+  email: string;
+  display_name: string;
+}
+
 export const me = {
-  whoami: () => api<{ user_id: number }>("/me"),
+  whoami: () => api<MeProfile>("/me"),
 };

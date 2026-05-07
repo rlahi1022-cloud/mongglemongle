@@ -5,6 +5,7 @@
 #include "monggle/media/media_service.h"
 #include "monggle/middleware/cors.h"
 #include "monggle/middleware/rate_limiter.h"
+#include "monggle/middleware/request_log.h"
 #include "monggle/posts/posts_service.h"
 #include "monggle/posts/snapshot_service.h"
 #include "monggle/router/routes.h"
@@ -32,6 +33,8 @@ int main() {
 
     // CORS는 라우트 등록 전에 설치
     monggle::installCors(monggle::defaultDevCors());
+    // 모든 응답에 액세스 로그 한 줄
+    monggle::installRequestLog();
     // RateLimiter 싱글톤 워밍 (정책 등록)
     (void) monggle::RateLimiter::instance();
 

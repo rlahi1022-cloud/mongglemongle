@@ -10,7 +10,7 @@ const navItem = ({ isActive }: { isActive: boolean }) =>
   );
 
 export function Layout() {
-  const { userId, logout } = useAuth();
+  const { userId, displayName, logout } = useAuth();
   const nav = useNavigate();
 
   return (
@@ -28,7 +28,15 @@ export function Layout() {
           </nav>
           <div className="flex items-center gap-2">
             {userId && (
-              <span className="text-xs text-muted-foreground">user #{userId}</span>
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground grid place-items-center text-xs font-bold">
+                  {(displayName ?? "?").trim().charAt(0).toUpperCase() || "?"}
+                </div>
+                <div className="text-sm leading-tight">
+                  <div className="font-medium">{displayName ?? `user #${userId}`}</div>
+                  <div className="text-xs text-muted-foreground">#{userId}</div>
+                </div>
+              </div>
             )}
             <Button
               variant="outline"

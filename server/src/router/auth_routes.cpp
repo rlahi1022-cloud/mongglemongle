@@ -3,6 +3,8 @@
 #include "monggle/middleware/rate_limiter.h"
 
 #include <drogon/drogon.h>
+#include <drogon/orm/DbClient.h>
+#include <drogon/orm/Exception.h>
 #include <json/json.h>
 
 #include <memory>
@@ -181,7 +183,7 @@ void configureAuthRoutes(std::shared_ptr<AuthService> authService) {
         },
         {drogon::Post});
 
-    // 자기 정보 조회 (access 토큰 검증 데모)
+    // 자기 프로필 — user_id, email, display_name (Layout 표시용)
     drogon::app().registerHandler(
         "/me",
         [authService](const drogon::HttpRequestPtr& req,
@@ -192,11 +194,35 @@ void configureAuthRoutes(std::shared_ptr<AuthService> authService) {
                                      "valid Bearer access token required", "/me"));
                 return;
             }
-            Json::Value body;
-            body["user_id"] = static_cast<Json::Int64>(*userId);
-            auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
-            resp->setStatusCode(drogon::k200OK);
-            callback(resp);
+            auto cb = std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
+                std::move(callback));
+            try {
+                auto db = drogon::app().getDbClient("monggle_db");
+                db->execSqlAsync(
+                    "SELECT email, display_name FROM users WHERE id = ?",
+                    [cb, userId](const drogon::orm::Result& rows) {
+                        if (rows.size() == 0) {
+                            (*cb)(problemJson(drogon::k404NotFound, "user_not_found",
+                                              "user record missing", "/me"));
+                            return;
+                        }
+                        Json::Value body;
+                        body["user_id"]      = static_cast<Json::Int64>(*userId);
+                        body["email"]        = rows[0]["email"].as<std::string>();
+                        body["display_name"] = rows[0]["display_name"].as<std::string>();
+                        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+                        resp->setStatusCode(drogon::k200OK);
+                        (*cb)(resp);
+                    },
+                    [cb](const drogon::orm::DrogonDbException& e) {
+                        (*cb)(problemJson(drogon::k500InternalServerError, "internal_error",
+                                          e.base().what(), "/me"));
+                    },
+                    *userId);
+            } catch (const std::exception& e) {
+                (*cb)(problemJson(drogon::k500InternalServerError, "internal_error",
+                                  e.what(), "/me"));
+            }
         },
         {drogon::Get});
 }
