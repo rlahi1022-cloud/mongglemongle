@@ -43,13 +43,14 @@
 
   body {
     @apply text-foreground antialiased;
+    /* 위가 짙은 남색(밤하늘) → 아래가 옅은 하늘/라벤더(지평선) */
     background-image: linear-gradient(
       180deg,
-      hsl(220 90% 88%) 0%,
-      hsl(225 75% 75%) 22%,
-      hsl(228 65% 55%) 55%,
-      hsl(232 55% 30%) 82%,
-      hsl(236 55% 16%) 100%
+      hsl(232 55% 18%) 0%,
+      hsl(228 55% 32%) 22%,
+      hsl(224 55% 52%) 50%,
+      hsl(220 70% 75%) 78%,
+      hsl(218 80% 90%) 100%
     );
     background-attachment: fixed;
     background-size: 100% 100%;
@@ -103,9 +104,9 @@
     opacity: 0.7;
   }
 
-  /* 구름 카드 — 흰 배경 + 부드러운 그림자 + 둥근 모서리 */
+  /* 구름 카드 — 살짝 반투명한 흰색으로 뒤 그라데이션이 비침 */
   .cloud-card {
-    @apply bg-card text-card-foreground rounded-3xl shadow-[0_10px_30px_-10px_rgba(15,23,42,0.25)] backdrop-blur-sm;
+    @apply bg-white/80 text-card-foreground rounded-3xl shadow-[0_10px_30px_-10px_rgba(15,23,42,0.35)] backdrop-blur-md border border-white/40;
   }
 
   /* 사이드바 안의 보조 카드 — 옅은 하늘색 톤 */

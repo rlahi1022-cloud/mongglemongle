@@ -38,8 +38,8 @@ export function Layout() {
       <div className="starfield" aria-hidden />
       <div className="starfield-extra" aria-hidden />
 
-      {/* 좌측 사이드바 — 흰 영역, 풀 높이 고정 */}
-      <aside className="relative z-20 w-72 shrink-0 h-screen bg-white shadow-[8px_0_24px_-8px_rgba(15,23,42,0.15)] flex flex-col gap-4 p-5 overflow-y-auto">
+      {/* 좌측 사이드바 — 살짝 반투명한 흰 영역, 풀 높이 고정 */}
+      <aside className="relative z-20 w-72 shrink-0 h-screen bg-white/85 backdrop-blur-xl shadow-[8px_0_32px_-12px_rgba(15,23,42,0.4)] flex flex-col gap-4 p-5 overflow-y-auto">
         {/* 마스코트 + 타이틀 */}
         <Link to="/" className="flex items-center gap-3">
           <img
