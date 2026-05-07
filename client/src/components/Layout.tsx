@@ -121,7 +121,6 @@ export function Layout() {
               </div>
               <div className="leading-tight text-sm hidden lg:block">
                 <div className="font-bold text-white">{displayName ?? `user #${userId}`}</div>
-                <div className="text-xs text-white/70">#{userId}</div>
               </div>
             </Link>
           )}
