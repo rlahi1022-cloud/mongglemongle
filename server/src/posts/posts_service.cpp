@@ -82,6 +82,7 @@ bool canView(std::int64_t viewerId, const Post& p, FollowsService* follows) {
 constexpr const char* kEventCreated          = "created";
 constexpr const char* kEventEdited           = "edited";
 constexpr const char* kEventDeleted          = "deleted";
+constexpr const char* kEventRestored         = "restored";
 constexpr const char* kEventVisibilityChange = "visibility_changed";
 
 std::string serializeJson(const Json::Value& v) {
@@ -264,6 +265,39 @@ Result<std::vector<Post>> PostsService::searchOwn(std::int64_t userId,
         out.reserve(rows.size());
         for (const auto& row : rows) out.push_back(rowToPost(row));
         return out;
+    } catch (const std::exception& e) {
+        return PostsError{PostsError::InternalError, e.what()};
+    }
+}
+
+Result<Post> PostsService::restore(std::int64_t authorId, std::int64_t postId) {
+    try {
+        auto tx = db()->newTransaction();
+
+        // deleted_at NOT NULL인(=삭제된) 본인 글만 복원 대상.
+        auto rows = tx->execSqlSync(
+            "SELECT user_id, deleted_at FROM posts WHERE id = ? LIMIT 1 FOR UPDATE",
+            postId);
+        if (rows.size() == 0) {
+            return PostsError{PostsError::NotFound, "post not found"};
+        }
+        if (rows[0]["user_id"].as<std::int64_t>() != authorId) {
+            return PostsError{PostsError::Forbidden, "not the author"};
+        }
+        if (rows[0]["deleted_at"].isNull()) {
+            return PostsError{PostsError::BadRequest, "post is not deleted"};
+        }
+
+        tx->execSqlSync("UPDATE posts SET deleted_at = NULL WHERE id = ?", postId);
+        Json::Value payload(Json::objectValue);
+        insertEvent(tx, authorId, postId, kEventRestored, payload);
+
+        auto refreshed = tx->execSqlSync(
+            "SELECT id, user_id, body, visibility, download_policy, created_at, updated_at "
+            "FROM posts WHERE id = ?", postId);
+        return rowToPost(refreshed[0]);
+    } catch (const drogon::orm::DrogonDbException& e) {
+        return PostsError{PostsError::InternalError, e.base().what()};
     } catch (const std::exception& e) {
         return PostsError{PostsError::InternalError, e.what()};
     }

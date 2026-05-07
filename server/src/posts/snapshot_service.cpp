@@ -78,6 +78,9 @@ void applyEvent(std::map<std::int64_t, PostStateAt>& state,
     } else if (eventType == "deleted") {
         it->second.deleted     = true;
         it->second.lastEventId = eventId;
+    } else if (eventType == "restored") {
+        it->second.deleted     = false;
+        it->second.lastEventId = eventId;
     } else if (eventType == "media_added") {
         // C5에서 다룸. MVP 시점 복원에는 미반영
         it->second.lastEventId = eventId;

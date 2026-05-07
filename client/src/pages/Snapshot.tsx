@@ -5,10 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, posts, type SnapshotResult } from "@/api/client";
 
+const fmt = (n: number) => String(n).padStart(2, "0");
+
 function nowIso(): string {
   const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  return `${now.getFullYear()}-${fmt(now.getMonth() + 1)}-${fmt(now.getDate())}T${fmt(now.getHours())}:${fmt(now.getMinutes())}:${fmt(now.getSeconds())}`;
 }
 
 export function SnapshotPage() {
@@ -16,6 +17,7 @@ export function SnapshotPage() {
   const [data, setData] = useState<SnapshotResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState<number | null>(null);
 
   const run = async () => {
     setLoading(true);
@@ -26,6 +28,18 @@ export function SnapshotPage() {
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "복원 실패");
     } finally { setLoading(false); }
+  };
+
+  const onRestoreOne = async (postId: number) => {
+    if (!confirm(`post #${postId} 을(를) 다시 살릴까요? 글이 현재 시점에 다시 보이게 됩니다.`)) return;
+    setRestoring(postId);
+    try {
+      await posts.restore(postId);
+      // 재조회 — 같은 시점으로 다시 가져와 deleted=false 반영
+      await run();
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : "실패");
+    } finally { setRestoring(null); }
   };
 
   return (
@@ -73,7 +87,7 @@ export function SnapshotPage() {
             </Card>
           )}
           {data.posts.map((p) => (
-            <Card key={p.id} className={`cloud-card ${p.deleted ? "opacity-60" : ""}`}>
+            <Card key={p.id} className={`cloud-card ${p.deleted ? "opacity-70" : ""}`}>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <div className="font-medium">post #{p.id}</div>
@@ -86,8 +100,20 @@ export function SnapshotPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
                 <div className="whitespace-pre-wrap">{p.body}</div>
+                {p.deleted && (
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={() => onRestoreOne(p.id)}
+                      disabled={restoring === p.id}
+                      className="rounded-2xl"
+                    >
+                      {restoring === p.id ? "살리는 중..." : "↩ 이 글 살리기"}
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}

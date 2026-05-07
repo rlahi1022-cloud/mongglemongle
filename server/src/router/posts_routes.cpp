@@ -153,6 +153,30 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
         },
         {drogon::Post});
 
+    // POST /posts/{id}/restore — 삭제된 본인 글 살리기
+    drogon::app().registerHandlerViaRegex(
+        "^/posts/([0-9]+)/restore$",
+        [authService, postsService](const drogon::HttpRequestPtr& req,
+                                    std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+            auto path = req->getPath();
+            auto userId = requireAuth(authService, req, cb, path);
+            if (!userId) return;
+
+            auto postId = parseIdFromPath(path, "/posts/");
+            if (!postId) {
+                cb(problemJson(drogon::k400BadRequest, "bad_request",
+                               "invalid post id", path));
+                return;
+            }
+            auto result = postsService->restore(*userId, *postId);
+            if (auto* err = std::get_if<PostsError>(&result)) {
+                cb(postsErrorResponse(*err, path));
+            } else {
+                cb(drogon::HttpResponse::newHttpJsonResponse(postToJson(std::get<Post>(result))));
+            }
+        },
+        {drogon::Post});
+
     // /posts/{id} — GET / PATCH / DELETE 단일 라우트
     drogon::app().registerHandlerViaRegex(
         "^/posts/([0-9]+)$",

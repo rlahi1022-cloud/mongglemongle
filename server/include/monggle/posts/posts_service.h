@@ -69,6 +69,9 @@ public:
 
     Result<bool> remove(std::int64_t authorId, std::int64_t postId);
 
+    // 삭제된(soft-delete) 본인 글을 복원. post_events에 'restored' 누적.
+    Result<Post> restore(std::int64_t authorId, std::int64_t postId);
+
     // ownerId의 글을 viewerId 시점으로. cursor=nullopt 면 가장 최신부터.
     Result<TimelinePage> timeline(std::int64_t viewerId, std::int64_t ownerId,
                                   std::optional<std::int64_t> cursor,

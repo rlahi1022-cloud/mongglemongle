@@ -214,6 +214,7 @@ export const posts = {
   update: (id: number, patch: Partial<Pick<Post, "body" | "visibility" | "download_policy">>) =>
     api<Post>(`/posts/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (id: number) => api<void>(`/posts/${id}`, { method: "DELETE" }),
+  restore: (id: number) => api<Post>(`/posts/${id}/restore`, { method: "POST" }),
   myTimeline: (cursor?: number, limit = 20) => {
     const q = new URLSearchParams();
     if (cursor) q.set("cursor", String(cursor));
