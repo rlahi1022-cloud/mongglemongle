@@ -24,9 +24,11 @@ add_executable(mongglemonggle
     server/src/auth/password_service.cpp
     server/src/event/event_bus.cpp
     server/src/posts/posts_service.cpp
+    server/src/posts/snapshot_service.cpp
     server/src/router/routes.cpp
     server/src/router/auth_routes.cpp
     server/src/router/posts_routes.cpp
+    server/src/router/snapshot_routes.cpp
 )
 
 target_include_directories(mongglemonggle PRIVATE

@@ -232,6 +232,32 @@ Result<bool> PostsService::remove(std::int64_t authorId, std::int64_t postId) {
     }
 }
 
+Result<std::vector<Post>> PostsService::searchOwn(std::int64_t userId,
+                                                   const std::string& query,
+                                                   int limit) {
+    if (query.empty()) {
+        return PostsError{PostsError::BadRequest, "q parameter required"};
+    }
+    if (limit <= 0 || limit > 100) limit = 20;
+    try {
+        // MariaDB는 한글 ngram FULLTEXT 미지원이라 MVP에서는 LIKE 사용.
+        // 운영 규모 도달 시 Elasticsearch/Meilisearch 또는 AI 임베딩 검색으로 대체.
+        std::string like = "%" + query + "%";
+        auto rows = db()->execSqlSync(
+            "SELECT id, user_id, body, visibility, download_policy, created_at, updated_at "
+            "FROM posts "
+            "WHERE user_id = ? AND deleted_at IS NULL AND body LIKE ? "
+            "ORDER BY id DESC LIMIT ?",
+            userId, like, limit);
+        std::vector<Post> out;
+        out.reserve(rows.size());
+        for (const auto& row : rows) out.push_back(rowToPost(row));
+        return out;
+    } catch (const std::exception& e) {
+        return PostsError{PostsError::InternalError, e.what()};
+    }
+}
+
 Result<TimelinePage> PostsService::timeline(std::int64_t viewerId, std::int64_t ownerId,
                                             std::optional<std::int64_t> cursor,
                                             int limit) {

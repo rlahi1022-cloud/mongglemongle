@@ -68,6 +68,11 @@ public:
     Result<TimelinePage> timeline(std::int64_t viewerId, std::int64_t ownerId,
                                   std::optional<std::int64_t> cursor,
                                   int limit);
+
+    // 본인 글 키워드 검색 (FULLTEXT). MVP — 임베딩 검색은 AI 허브 후속.
+    Result<std::vector<Post>> searchOwn(std::int64_t userId,
+                                        const std::string& query,
+                                        int limit);
 };
 
 } // namespace monggle

@@ -265,6 +265,35 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
         },
         {drogon::Get});
 
+    // GET /me/search?q=... — 본인 글 키워드 검색 (FULLTEXT, MVP)
+    drogon::app().registerHandler(
+        "/me/search",
+        [authService, postsService](const drogon::HttpRequestPtr& req,
+                                    std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+            auto userId = requireAuth(authService, req, cb, "/me/search");
+            if (!userId) return;
+
+            auto q = req->getParameter("q");
+            int limit = 20;
+            if (auto l = req->getParameter("limit"); !l.empty()) {
+                try { limit = std::stoi(l); } catch (...) {}
+            }
+            auto result = postsService->searchOwn(*userId, q, limit);
+            if (auto* err = std::get_if<PostsError>(&result)) {
+                cb(postsErrorResponse(*err, "/me/search"));
+                return;
+            }
+            const auto& items = std::get<std::vector<Post>>(result);
+            Json::Value body(Json::objectValue);
+            body["q"]     = q;
+            body["count"] = static_cast<Json::Int64>(items.size());
+            Json::Value arr(Json::arrayValue);
+            for (const auto& p : items) arr.append(postToJson(p));
+            body["items"] = arr;
+            cb(drogon::HttpResponse::newHttpJsonResponse(body));
+        },
+        {drogon::Get});
+
     // GET /users/{id}/timeline — 타인 타임라인 (visibility 필터)
     drogon::app().registerHandlerViaRegex(
         "^/users/([0-9]+)/timeline$",
