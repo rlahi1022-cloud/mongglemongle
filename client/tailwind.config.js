@@ -39,11 +39,35 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // 별 색상
+        star: "hsl(45 100% 80%)",
       },
       borderRadius: {
         lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        md: "calc(var(--radius) - 4px)",
+        sm: "calc(var(--radius) - 8px)",
+        "2xl": "calc(var(--radius) + 6px)",
+        "3xl": "calc(var(--radius) + 14px)",
+      },
+      backgroundImage: {
+        "evening-sky":
+          "linear-gradient(180deg, hsl(220 90% 88%) 0%, hsl(225 70% 75%) 25%, hsl(228 60% 55%) 55%, hsl(232 55% 32%) 80%, hsl(236 50% 18%) 100%)",
+      },
+      keyframes: {
+        twinkle: {
+          "0%, 100%": { opacity: "0.4" },
+          "50%": { opacity: "1" },
+        },
+        float: {
+          "0%, 100%": { transform: "translateY(0px)" },
+          "50%": { transform: "translateY(-6px)" },
+        },
+      },
+      animation: {
+        twinkle: "twinkle 3s ease-in-out infinite",
+        "twinkle-slow": "twinkle 5s ease-in-out infinite",
+        "twinkle-fast": "twinkle 2s ease-in-out infinite",
+        float: "float 4s ease-in-out infinite",
       },
     },
   },

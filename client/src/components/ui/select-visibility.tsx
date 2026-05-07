@@ -13,7 +13,7 @@ export function VisibilitySelect({ value, onChange, className }: VisibilitySelec
       value={value}
       onChange={(e) => onChange(e.target.value as VisibilitySelectProps["value"])}
       className={cn(
-        "h-9 rounded-md border border-input bg-background px-2 text-sm",
+        "h-9 rounded-2xl border border-input bg-background px-3 text-sm",
         className
       )}
     >

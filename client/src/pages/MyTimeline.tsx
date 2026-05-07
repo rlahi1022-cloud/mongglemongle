@@ -15,7 +15,11 @@ export function MyTimelinePage() {
     setError(null);
     try {
       const page = await posts.myTimeline(cur);
-      setItems(cur ? (prev) => [...prev, ...page.items] as any : page.items);
+      if (cur) {
+        setItems((prev) => [...prev, ...page.items]);
+      } else {
+        setItems(page.items);
+      }
       setCursor(page.next_cursor);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "타임라인 로드 실패");
@@ -34,29 +38,32 @@ export function MyTimelinePage() {
   };
 
   return (
-    <div className="space-y-4 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold">내 글</h1>
-      {error && <div className="text-sm text-destructive">{error}</div>}
+    <div className="space-y-5">
+      <h1 className="text-2xl font-bold text-white drop-shadow">📓 내 글</h1>
+      {error && <div className="text-sm text-white bg-destructive/80 rounded-2xl px-4 py-2">{error}</div>}
       {items.length === 0 && !loading && (
-        <Card><CardContent className="py-10 text-center text-muted-foreground">
-          아직 작성한 글이 없습니다.
-        </CardContent></Card>
+        <Card className="cloud-card">
+          <CardContent className="py-12 text-center text-muted-foreground">
+            아직 작성한 글이 없습니다.
+          </CardContent>
+        </Card>
       )}
       {items.map((p) => (
         <PostCard
           key={p.id}
-          authorName={`나 (#${p.user_id})`}
+          authorName="나"
           body={p.body}
           visibility={p.visibility}
           createdAt={p.created_at}
           rightSlot={
-            <Button size="sm" variant="ghost" onClick={() => onDelete(p.id)}>삭제</Button>
+            <Button size="sm" variant="ghost" className="rounded-2xl" onClick={() => onDelete(p.id)}>삭제</Button>
           }
         />
       ))}
       {cursor && (
         <div className="text-center">
-          <Button variant="outline" onClick={() => load(cursor)} disabled={loading}>
+          <Button variant="outline" className="rounded-2xl bg-white/80 backdrop-blur"
+                  onClick={() => load(cursor)} disabled={loading}>
             {loading ? "..." : "더 불러오기"}
           </Button>
         </div>

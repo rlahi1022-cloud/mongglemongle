@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { ApiError, posts, type SnapshotResult } from "@/api/client";
 
 function nowIso(): string {
-  // YYYY-MM-DDTHH:MM:SS (input[type=datetime-local] 호환)
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
@@ -30,15 +29,15 @@ export function SnapshotPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold">시점 복원</h1>
-        <p className="text-muted-foreground text-sm mt-1">
+        <h1 className="text-2xl font-bold text-white drop-shadow">⏳ 시점 복원</h1>
+        <p className="text-white/80 text-sm mt-1">
           임의 시점 t의 사용자 상태를 이벤트 소스(post_events) 재생으로 정확히 복원합니다.
-          삭제/수정/공개범위 변경 모두 그 시점 그대로.
+          삭제·수정·공개범위 변경 모두 그 시점 그대로.
         </p>
       </div>
-      <Card>
+      <Card className="cloud-card">
         <CardHeader>
           <CardTitle className="text-base">언제로 돌아갈까요?</CardTitle>
           <CardDescription>현지 시간(UTC 변환은 서버에서 처리). datetime-local 형식.</CardDescription>
@@ -48,30 +47,33 @@ export function SnapshotPage() {
             <div className="flex-1 space-y-2">
               <Label htmlFor="at">시점</Label>
               <Input id="at" type="datetime-local" step="1" value={at}
+                className="rounded-2xl"
                 onChange={(e) => setAt(e.target.value)} />
             </div>
-            <Button onClick={run} disabled={loading}>
+            <Button onClick={run} disabled={loading} className="rounded-2xl">
               {loading ? "복원 중..." : "복원"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {error && <div className="text-sm text-destructive">{error}</div>}
+      {error && <div className="text-sm text-white bg-destructive/80 rounded-2xl px-4 py-2">{error}</div>}
 
       {data && (
         <div className="space-y-3">
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm text-white/80">
             복원 시점: <span className="font-mono">{data.target_time}</span>
             · 글 {data.posts.length}개
           </div>
           {data.posts.length === 0 && (
-            <Card><CardContent className="py-10 text-center text-muted-foreground">
-              이 시점엔 작성된 글이 아직 없었습니다.
-            </CardContent></Card>
+            <Card className="cloud-card">
+              <CardContent className="py-12 text-center text-muted-foreground">
+                이 시점엔 작성된 글이 아직 없었습니다.
+              </CardContent>
+            </Card>
           )}
           {data.posts.map((p) => (
-            <Card key={p.id} className={p.deleted ? "opacity-50" : ""}>
+            <Card key={p.id} className={`cloud-card ${p.deleted ? "opacity-60" : ""}`}>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <div className="font-medium">post #{p.id}</div>
