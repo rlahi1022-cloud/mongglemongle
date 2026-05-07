@@ -1,6 +1,6 @@
-#include "monggle/entry_service.h"
-#include "monggle/auth_service.h"
-#include "monggle/event_bus.h"
+#include "monggle/entry/entry_service.h"
+#include "monggle/auth/auth_service.h"
+#include "monggle/event/event_bus.h"
 #include <iostream>
 
 namespace monggle {

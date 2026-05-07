@@ -1,4 +1,4 @@
-#include "monggle/event_bus.h"
+#include "monggle/event/event_bus.h"
 #include <iostream>
 
 namespace monggle {

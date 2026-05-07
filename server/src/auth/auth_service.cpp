@@ -1,4 +1,4 @@
-#include "monggle/auth_service.h"
+#include "monggle/auth/auth_service.h"
 
 namespace monggle {
 

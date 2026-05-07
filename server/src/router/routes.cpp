@@ -1,6 +1,6 @@
-#include "monggle/routes.h"
-#include "monggle/entry_service.h"
-#include "monggle/router.h"
+#include "monggle/router/routes.h"
+#include "monggle/entry/entry_service.h"
+#include "monggle/router/router.h"
 
 namespace monggle {
 

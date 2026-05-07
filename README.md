@@ -10,9 +10,18 @@
 - 친구 공유 및 다운로드 워크플로우
 
 ## 현재 구성
-- `src/main.cpp`: 서비스 초기화 및 라우터/핸들러 구조 뼈대
-- `CMakeLists.txt`: 기본 빌드 설정
+- `server/`: 백엔드 서버 구현
+  - `server/include/monggle/`: 기능별 헤더
+  - `server/src/`: 기능별 소스
+- `client/`: 클라이언트 앱 자리 표시자
+- `CMakeLists.txt`: 서버 빌드 설정
 - `doc/몽글몽글_기획.pdf`: 프로젝트 설계 문서
+
+## 폴더 구조
+- `server/auth/`: 인증 관련 서비스
+- `server/entry/`: 콘텐츠 작성/이벤트 처리
+- `server/event/`: 이벤트 버스 / 이벤트 소싱
+- `server/router/`: HTTP 라우팅과 엔드포인트 구성
 
 ## 다음 구현 단계
 1. HTTP 서버 엔진 선택 (`Drogon` 등)

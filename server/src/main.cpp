@@ -1,9 +1,9 @@
 #include "monggle/app_config.h"
-#include "monggle/auth_service.h"
-#include "monggle/event_bus.h"
-#include "monggle/entry_service.h"
-#include "monggle/router.h"
-#include "monggle/routes.h"
+#include "monggle/auth/auth_service.h"
+#include "monggle/event/event_bus.h"
+#include "monggle/entry/entry_service.h"
+#include "monggle/router/router.h"
+#include "monggle/router/routes.h"
 
 #include <iostream>
 
