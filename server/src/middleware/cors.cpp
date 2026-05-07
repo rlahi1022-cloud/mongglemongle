@@ -39,7 +39,7 @@ CorsConfig defaultDevCors() {
         "http://127.0.0.1:5173",
         "http://localhost:3000",  // Next.js / CRA 기본
     };
-    c.allowedMethods   = "GET, POST, PATCH, DELETE, OPTIONS";
+    c.allowedMethods   = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
     c.allowedHeaders   = "Authorization, Content-Type, Idempotency-Key";
     c.exposedHeaders   = "Content-Disposition";
     c.maxAge           = "600";
