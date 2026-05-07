@@ -75,7 +75,7 @@
 │       ├── api/          백엔드 fetch 래퍼 (auth 자동, refresh 회전)
 │       ├── auth/         AuthContext, ProtectedRoute
 │       ├── components/   Layout(사이드바), PostCard, ui/*
-│       └── pages/        Login, Signup, Feed, MyTimeline, Snapshot, Search, Profile
+│       └── pages/        Login, Signup, Feed, MyTimeline, Snapshot, Search, Devlogs, Profile
 ├── scripts/gen_dev_jwt_keys.sh
 └── CMakeLists.txt
 ```
@@ -89,7 +89,7 @@
 | 좌측 사이드바 (흰색) | 마스코트 + 메뉴(피드/내 글/시점 복원/검색) + 친구 박스 + 프로필(아바타 클릭으로 업로드) |
 | 본문 (저녁하늘 그라데이션 + 별) | 흰 구름 카드들이 떠 있는 형태. 글, 미디어 미리보기, 시점 복원 슬라이더 등 |
 | 로그인/회원가입 | 마스코트가 떠다니는(`animate-float`) 풀스크린 별밤 |
-| 개발일지 메뉴 | 피드 글을 근거로 선택하고 네이버 글/GitHub 기록/개발 환경 메모를 더해 공부형/당일 개발 경험 초안 생성 |
+| 개발일지 메뉴 | 피드 글을 근거로 선택하고 네이버 글/GitHub 기록/개발 환경 메모를 더해 공부형/당일 개발 경험 초안 생성·발행 |
 
 ---
 

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ApiError, social, type FeedItem } from "@/api/client";
+import { useCallback, useEffect, useState } from "react";
+import { ApiError, posts, social, type FeedItem, type Post } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DevlogDraftDialog } from "@/components/DevlogDraftDialog";
@@ -7,6 +7,7 @@ import { PostCard } from "@/components/PostCard";
 
 export function DevlogsPage() {
   const [items, setItems] = useState<FeedItem[]>([]);
+  const [devlogs, setDevlogs] = useState<Post[]>([]);
   const [selectedPostIds, setSelectedPostIds] = useState<number[]>([]);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -15,7 +16,7 @@ export function DevlogsPage() {
 
   const selectedPosts = items.filter((item) => selectedPostIds.includes(item.id));
 
-  const refresh = async () => {
+  const refreshEvidence = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -27,9 +28,22 @@ export function DevlogsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { refresh(); }, []);
+  const refreshDevlogs = useCallback(async () => {
+    try {
+      const page = await posts.myTimeline(undefined, 20, "devlog");
+      setDevlogs(page.items);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "개발일지 로드 실패");
+    }
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([refreshEvidence(), refreshDevlogs()]);
+  }, [refreshDevlogs, refreshEvidence]);
+
+  useEffect(() => { refreshAll(); }, [refreshAll]);
 
   const toggleSelected = (postId: number) => {
     setSelectedPostIds((prev) =>
@@ -70,6 +84,24 @@ export function DevlogsPage() {
       </div>
 
       {error && <div className="cloud-card px-4 py-2 text-sm font-medium text-destructive">{error}</div>}
+
+      {devlogs.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="cloud-card px-4 py-3 text-base font-bold">내 개발일지</h2>
+          {devlogs.map((item) => (
+            <PostCard
+              key={item.id}
+              postId={item.id}
+              authorId={item.user_id}
+              authorName="나"
+              title={item.title}
+              body={item.body}
+              visibility={item.visibility}
+              createdAt={item.created_at}
+            />
+          ))}
+        </section>
+      )}
 
       {items.length === 0 && !loading && (
         <Card className="cloud-card">
@@ -122,7 +154,7 @@ export function DevlogsPage() {
         <DevlogDraftDialog
           selectedPosts={selectedPosts}
           onClose={() => setDraftOpen(false)}
-          onPublished={refresh}
+          onPublished={refreshAll}
         />
       )}
     </div>

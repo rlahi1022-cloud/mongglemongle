@@ -39,6 +39,7 @@ public:
         std::int64_t userId;
         std::string  authorDisplayName;
         std::string  title;
+        std::string  category;
         std::string  body;
         std::string  visibility;
         std::string  downloadPolicy;

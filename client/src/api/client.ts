@@ -121,11 +121,13 @@ export function mediaUrl(mediaId: number, kind: "view" | "thumb" | "download" = 
 
 export type Visibility = "public" | "friends" | "private";
 export type DownloadPolicy = "owner_only" | "followers" | "public_allowed";
+export type PostCategory = "feed" | "devlog";
 
 export interface Post {
   id: number;
   user_id: number;
   title: string;
+  category: PostCategory;
   body: string;
   visibility: Visibility;
   download_policy: DownloadPolicy;
@@ -213,20 +215,27 @@ export const auth = {
 };
 
 export const posts = {
-  create: (title: string, body: string, visibility: Visibility, download_policy: DownloadPolicy = "owner_only") =>
+  create: (
+    title: string,
+    body: string,
+    visibility: Visibility,
+    download_policy: DownloadPolicy = "owner_only",
+    category: PostCategory = "feed"
+  ) =>
     api<Post>("/posts", {
       method: "POST",
-      body: JSON.stringify({ title, body, visibility, download_policy }),
+      body: JSON.stringify({ title, body, visibility, download_policy, category }),
     }),
   get: (id: number) => api<Post>(`/posts/${id}`),
   update: (id: number, patch: Partial<Pick<Post, "title" | "body" | "visibility" | "download_policy">>) =>
     api<Post>(`/posts/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (id: number) => api<void>(`/posts/${id}`, { method: "DELETE" }),
   restore: (id: number) => api<Post>(`/posts/${id}/restore`, { method: "POST" }),
-  myTimeline: (cursor?: number, limit = 20) => {
+  myTimeline: (cursor?: number, limit = 20, category: PostCategory | "all" = "all") => {
     const q = new URLSearchParams();
     if (cursor) q.set("cursor", String(cursor));
     q.set("limit", String(limit));
+    if (category !== "all") q.set("category", category);
     return api<Page<Post>>(`/me/timeline?${q}`);
   },
   search: (q: string) =>

@@ -49,6 +49,7 @@ Json::Value postToJson(const Post& p) {
     j["id"]              = static_cast<Json::Int64>(p.id);
     j["user_id"]         = static_cast<Json::Int64>(p.userId);
     j["title"]           = p.title;
+    j["category"]        = toDbString(p.category);
     j["body"]            = p.body;
     j["visibility"]      = toDbString(p.visibility);
     j["download_policy"] = toDbString(p.downloadPolicy);
@@ -137,8 +138,10 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
 
             std::string visStr = (*json).get("visibility", "private").asString();
             std::string dlpStr = (*json).get("download_policy", "owner_only").asString();
+            std::string catStr = (*json).get("category", "feed").asString();
             auto vis = parseVisibility(visStr);
             auto dlp = parseDownloadPolicy(dlpStr);
+            auto cat = parsePostCategory(catStr);
             if (!vis) {
                 cb(problemJson(drogon::k400BadRequest, "bad_request",
                                "invalid visibility", "/posts"));
@@ -149,8 +152,14 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
                                "invalid download_policy", "/posts"));
                 return;
             }
+            if (!cat) {
+                cb(problemJson(drogon::k400BadRequest, "bad_request",
+                               "invalid category", "/posts"));
+                return;
+            }
             creq.visibility     = *vis;
             creq.downloadPolicy = *dlp;
+            creq.category       = *cat;
 
             auto result = postsService->create(*userId, creq);
             if (auto* err = std::get_if<PostsError>(&result)) {
@@ -297,8 +306,17 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
             if (auto l = req->getParameter("limit"); !l.empty()) {
                 try { limit = std::stoi(l); } catch (...) {}
             }
+            std::optional<PostCategory> category;
+            if (auto c = req->getParameter("category"); !c.empty() && c != "all") {
+                category = parsePostCategory(c);
+                if (!category) {
+                    cb(problemJson(drogon::k400BadRequest, "bad_request",
+                                   "invalid category", "/me/timeline"));
+                    return;
+                }
+            }
 
-            auto result = postsService->timeline(*userId, *userId, cursor, limit);
+            auto result = postsService->timeline(*userId, *userId, cursor, limit, category);
             if (auto* err = std::get_if<PostsError>(&result)) {
                 cb(postsErrorResponse(*err, "/me/timeline"));
             } else {
@@ -388,8 +406,17 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
             if (auto l = req->getParameter("limit"); !l.empty()) {
                 try { limit = std::stoi(l); } catch (...) {}
             }
+            std::optional<PostCategory> category;
+            if (auto c = req->getParameter("category"); !c.empty() && c != "all") {
+                category = parsePostCategory(c);
+                if (!category) {
+                    cb(problemJson(drogon::k400BadRequest, "bad_request",
+                                   "invalid category", pathStr));
+                    return;
+                }
+            }
 
-            auto result = postsService->timeline(viewerId, ownerId, cursor, limit);
+            auto result = postsService->timeline(viewerId, ownerId, cursor, limit, category);
             if (auto* err = std::get_if<PostsError>(&result)) {
                 cb(postsErrorResponse(*err, pathStr));
             } else {

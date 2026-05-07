@@ -144,7 +144,7 @@ FResult<FollowsService::FeedPage> FollowsService::feed(std::int64_t viewerId,
         // Pull 전략 — 본인 글 OR 팔로우한 사람의 (public|friends) 글
         // friends visibility는 follower 관계만 통과
         std::string sql =
-            "SELECT p.id, p.user_id, p.title, p.body, p.visibility, p.download_policy, "
+            "SELECT p.id, p.user_id, p.title, p.category, p.body, p.visibility, p.download_policy, "
             "       p.created_at, p.updated_at, u.display_name AS author_name "
             "FROM posts p JOIN users u ON u.id = p.user_id "
             "WHERE p.deleted_at IS NULL "
@@ -171,6 +171,7 @@ FResult<FollowsService::FeedPage> FollowsService::feed(std::int64_t viewerId,
             it.userId              = r["user_id"].as<std::int64_t>();
             it.authorDisplayName   = r["author_name"].as<std::string>();
             it.title               = r["title"].isNull() ? std::string{} : r["title"].as<std::string>();
+            it.category            = r["category"].as<std::string>();
             it.body                = r["body"].as<std::string>();
             it.visibility          = r["visibility"].as<std::string>();
             it.downloadPolicy      = r["download_policy"].as<std::string>();

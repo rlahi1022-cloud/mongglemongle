@@ -31,6 +31,14 @@ const char* toDbString(DownloadPolicy p) {
     return "owner_only";
 }
 
+const char* toDbString(PostCategory c) {
+    switch (c) {
+        case PostCategory::Feed:   return "feed";
+        case PostCategory::Devlog: return "devlog";
+    }
+    return "feed";
+}
+
 std::optional<Visibility> parseVisibility(const std::string& s) {
     if (s == "public")  return Visibility::Public;
     if (s == "friends") return Visibility::Friends;
@@ -45,6 +53,12 @@ std::optional<DownloadPolicy> parseDownloadPolicy(const std::string& s) {
     return std::nullopt;
 }
 
+std::optional<PostCategory> parsePostCategory(const std::string& s) {
+    if (s == "feed")   return PostCategory::Feed;
+    if (s == "devlog") return PostCategory::Devlog;
+    return std::nullopt;
+}
+
 namespace {
 
 drogon::orm::DbClientPtr db() {
@@ -56,6 +70,8 @@ Post rowToPost(const drogon::orm::Row& row) {
     p.id              = row["id"].as<std::int64_t>();
     p.userId          = row["user_id"].as<std::int64_t>();
     p.title           = row["title"].isNull() ? std::string{} : row["title"].as<std::string>();
+    p.category        = parsePostCategory(row["category"].as<std::string>())
+                            .value_or(PostCategory::Feed);
     p.body            = row["body"].as<std::string>();
     p.visibility      = parseVisibility(row["visibility"].as<std::string>())
                             .value_or(Visibility::Private);
@@ -123,10 +139,11 @@ Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest
         auto tx = db()->newTransaction();
 
         auto inserted = tx->execSqlSync(
-            "INSERT INTO posts (user_id, title, body, visibility, download_policy) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO posts (user_id, title, category, body, visibility, download_policy) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             authorId,
             req.title,
+            std::string(toDbString(req.category)),
             req.body,
             std::string(toDbString(req.visibility)),
             std::string(toDbString(req.downloadPolicy)));
@@ -134,13 +151,14 @@ Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest
 
         Json::Value payload(Json::objectValue);
         payload["title"]           = req.title;
+        payload["category"]        = toDbString(req.category);
         payload["body"]            = req.body;
         payload["visibility"]      = toDbString(req.visibility);
         payload["download_policy"] = toDbString(req.downloadPolicy);
         insertEvent(tx, authorId, postId, kEventCreated, payload);
 
         auto rows = tx->execSqlSync(
-            "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
+            "SELECT id, user_id, title, category, body, visibility, download_policy, created_at, updated_at "
             "FROM posts WHERE id = ?", postId);
         if (rows.size() == 0) {
             return PostsError{PostsError::InternalError, "post vanished after insert"};
@@ -156,7 +174,7 @@ Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest
 Result<Post> PostsService::get(std::int64_t viewerId, std::int64_t postId) {
     try {
         auto rows = db()->execSqlSync(
-            "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
+            "SELECT id, user_id, title, category, body, visibility, download_policy, created_at, updated_at "
             "FROM posts WHERE id = ? AND deleted_at IS NULL LIMIT 1",
             postId);
         if (rows.size() == 0) {
@@ -223,7 +241,7 @@ Result<Post> PostsService::update(std::int64_t authorId, std::int64_t postId,
         }
 
         auto refreshed = tx->execSqlSync(
-            "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
+            "SELECT id, user_id, title, category, body, visibility, download_policy, created_at, updated_at "
             "FROM posts WHERE id = ?", postId);
         return rowToPost(refreshed[0]);
     } catch (const drogon::orm::DrogonDbException& e) {
@@ -271,7 +289,7 @@ Result<std::vector<Post>> PostsService::searchOwn(std::int64_t userId,
         // 운영 규모 도달 시 Elasticsearch/Meilisearch 또는 AI 임베딩 검색으로 대체.
         std::string like = "%" + query + "%";
         auto rows = db()->execSqlSync(
-            "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
+            "SELECT id, user_id, title, category, body, visibility, download_policy, created_at, updated_at "
             "FROM posts "
             "WHERE user_id = ? AND deleted_at IS NULL AND body LIKE ? "
             "ORDER BY id DESC LIMIT ?",
@@ -308,7 +326,7 @@ Result<Post> PostsService::restore(std::int64_t authorId, std::int64_t postId) {
         insertEvent(tx, authorId, postId, kEventRestored, payload);
 
         auto refreshed = tx->execSqlSync(
-            "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
+            "SELECT id, user_id, title, category, body, visibility, download_policy, created_at, updated_at "
             "FROM posts WHERE id = ?", postId);
         return rowToPost(refreshed[0]);
     } catch (const drogon::orm::DrogonDbException& e) {
@@ -320,7 +338,8 @@ Result<Post> PostsService::restore(std::int64_t authorId, std::int64_t postId) {
 
 Result<TimelinePage> PostsService::timeline(std::int64_t viewerId, std::int64_t ownerId,
                                             std::optional<std::int64_t> cursor,
-                                            int limit) {
+                                            int limit,
+                                            std::optional<PostCategory> category) {
     if (limit <= 0 || limit > 100) limit = 20;
     try {
         const bool isOwner   = (viewerId == ownerId);
@@ -332,8 +351,11 @@ Result<TimelinePage> PostsService::timeline(std::int64_t viewerId, std::int64_t 
         const int  fetchN    = limit + 1;  // 다음 cursor 판정용 +1
 
         std::ostringstream sql;
-        sql << "SELECT id, user_id, title, body, visibility, download_policy, created_at, updated_at "
+        sql << "SELECT id, user_id, title, category, body, visibility, download_policy, created_at, updated_at "
                "FROM posts WHERE user_id = ? AND deleted_at IS NULL ";
+        if (category) {
+            sql << " AND category = ? ";
+        }
         if (!isOwner) {
             sql << (isFriend ? " AND visibility IN ('public','friends') "
                              : " AND visibility = 'public' ");
@@ -344,6 +366,12 @@ Result<TimelinePage> PostsService::timeline(std::int64_t viewerId, std::int64_t 
         sql << " ORDER BY id DESC LIMIT ?";
 
         drogon::orm::Result rows = [&]() {
+            if (category && cursor) {
+                return db()->execSqlSync(sql.str(), ownerId, std::string(toDbString(*category)), *cursor, fetchN);
+            }
+            if (category) {
+                return db()->execSqlSync(sql.str(), ownerId, std::string(toDbString(*category)), fetchN);
+            }
             if (cursor) {
                 return db()->execSqlSync(sql.str(), ownerId, *cursor, fetchN);
             }

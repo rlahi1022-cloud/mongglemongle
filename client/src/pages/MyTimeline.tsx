@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PostCard } from "@/components/PostCard";
 import { EditPostDialog } from "@/components/EditPostDialog";
-import { ApiError, posts, type Post } from "@/api/client";
+import { ApiError, posts, type Post, type PostCategory } from "@/api/client";
 import { cn } from "@/lib/utils";
 
 const visBadge: Record<string, string> = {
@@ -16,28 +16,38 @@ const visLabel: Record<string, string> = {
   friends: "친구만",
   private: "나만",
 };
+const categoryLabel: Record<PostCategory | "all", string> = {
+  all: "전체글",
+  feed: "피드",
+  devlog: "개발일지",
+};
+const categoryBadge: Record<PostCategory, string> = {
+  feed: "bg-emerald-100 text-emerald-700",
+  devlog: "bg-violet-100 text-violet-700",
+};
 
 export function MyTimelinePage() {
   const [items, setItems] = useState<Post[]>([]);
   const [cursor, setCursor] = useState<number | null>(null);
+  const [category, setCategory] = useState<PostCategory | "all">("all");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState<number | null>(null);
   const [editing, setEditing] = useState<Post | null>(null);
 
-  const load = async (cur?: number) => {
+  const load = useCallback(async (cur?: number) => {
     setLoading(true);
     setError(null);
     try {
-      const page = await posts.myTimeline(cur);
+      const page = await posts.myTimeline(cur, 20, category);
       if (cur) setItems((prev) => [...prev, ...page.items]);
       else     setItems(page.items);
       setCursor(page.next_cursor);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "타임라인 로드 실패");
     } finally { setLoading(false); }
-  };
-  useEffect(() => { load(); }, []);
+  }, [category]);
+  useEffect(() => { load(); }, [load]);
 
   const onDelete = async (id: number) => {
     if (!confirm("정말 삭제하시겠습니까? 이벤트 이력은 남습니다.")) return;
@@ -59,6 +69,21 @@ export function MyTimelinePage() {
       <div className="cloud-card px-5 py-4">
         <h1 className="text-2xl font-bold text-foreground">📓 내 글</h1>
         <p className="text-foreground/70 text-sm mt-1">제목을 클릭하면 본문과 첨부 미디어, 댓글이 펼쳐집니다.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(["all", "feed", "devlog"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => { setOpenId(null); setCategory(value); }}
+              className={cn(
+                "rounded-2xl px-3 py-1.5 text-sm font-bold transition",
+                category === value ? "bg-primary text-primary-foreground" : "bg-white/80 hover:bg-secondary"
+              )}
+            >
+              {categoryLabel[value]}
+            </button>
+          ))}
+        </div>
       </div>
       {error && <div className="cloud-card text-sm text-destructive font-medium px-4 py-2">{error}</div>}
       {items.length === 0 && !loading && (
@@ -120,6 +145,9 @@ export function MyTimelinePage() {
                 </div>
               </div>
               <div className="shrink-0 flex items-center gap-2 text-xs">
+                <span className={`px-2 py-0.5 rounded-full ${categoryBadge[p.category]}`}>
+                  {categoryLabel[p.category]}
+                </span>
                 <span className={`px-2 py-0.5 rounded-full ${visBadge[p.visibility] ?? "bg-slate-100"}`}>
                   {visLabel[p.visibility] ?? p.visibility}
                 </span>

@@ -213,7 +213,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
     setPublishing(true);
     setError(null);
     try {
-      await posts.create(title.trim() || titleFromDraft(draft), draft.trim(), visibility);
+      await posts.create(title.trim() || titleFromDraft(draft), draft.trim(), visibility, "owner_only", "devlog");
       setPublished(true);
       onPublished?.();
     } catch (e) {
