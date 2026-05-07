@@ -30,9 +30,9 @@ export function SnapshotPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-white drop-shadow">⏳ 시점 복원</h1>
-        <p className="text-white/80 text-sm mt-1">
+      <div className="cloud-card px-5 py-4">
+        <h1 className="text-2xl font-bold text-foreground">⏳ 시점 복원</h1>
+        <p className="text-foreground/70 text-sm mt-1">
           임의 시점 t의 사용자 상태를 이벤트 소스(post_events) 재생으로 정확히 복원합니다.
           삭제·수정·공개범위 변경 모두 그 시점 그대로.
         </p>
@@ -57,11 +57,11 @@ export function SnapshotPage() {
         </CardContent>
       </Card>
 
-      {error && <div className="text-sm text-white bg-destructive/80 rounded-2xl px-4 py-2">{error}</div>}
+      {error && <div className="cloud-card text-sm text-destructive font-medium px-4 py-2">{error}</div>}
 
       {data && (
         <div className="space-y-3">
-          <div className="text-sm text-white/80">
+          <div className="cloud-card px-4 py-2 text-sm text-foreground">
             복원 시점: <span className="font-mono">{data.target_time}</span>
             · 글 {data.posts.length}개
           </div>

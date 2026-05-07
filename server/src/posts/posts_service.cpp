@@ -110,6 +110,10 @@ Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest
     if (req.body.empty()) {
         return PostsError{PostsError::BadRequest, "body must not be empty"};
     }
+    // UTF-8 바이트 기준 — 한글 1글자 ~3바이트. 1000자 ≒ 3000바이트.
+    if (req.body.size() > 3000) {
+        return PostsError{PostsError::BadRequest, "body too long (max ~1000 chars)"};
+    }
     try {
         auto tx = db()->newTransaction();
 

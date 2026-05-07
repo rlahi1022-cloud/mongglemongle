@@ -108,17 +108,17 @@
     @apply bg-card text-card-foreground rounded-3xl shadow-[0_10px_30px_-10px_rgba(15,23,42,0.25)] backdrop-blur-sm;
   }
 
-  /* 사이드바 카드 — 살짝 투명한 어두운 톤 (저녁하늘 위에 떠 있는 느낌) */
+  /* 사이드바 안의 보조 카드 — 옅은 하늘색 톤 */
   .sky-card {
-    @apply rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 text-white;
+    @apply rounded-2xl bg-secondary/60 border border-border text-foreground;
   }
 
-  /* 사이드바 nav 항목 */
+  /* 사이드바 nav 항목 (흰 배경 위, 어두운 텍스트) */
   .nav-item {
     @apply flex items-center gap-3 px-4 py-2.5 rounded-2xl text-sm transition-all
-           text-white/85 hover:bg-white/15 hover:text-white;
+           text-foreground/70 hover:bg-secondary hover:text-foreground;
   }
   .nav-item-active {
-    @apply bg-white/20 text-white shadow-inner;
+    @apply bg-primary/10 text-primary font-medium;
   }
 }

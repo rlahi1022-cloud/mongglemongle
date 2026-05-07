@@ -312,6 +312,24 @@ MResult<MediaAsset> MediaService::getForView(const ViewerContext& vc, std::int64
     }
 }
 
+MResult<std::vector<MediaAsset>> MediaService::listForPost(const ViewerContext& vc, std::int64_t postId) {
+    try {
+        auto post = loadPostMeta(postId);
+        if (!post || post->deleted) return MediaError{MediaError::NotFound, "post not found"};
+        if (!canViewPost(vc, *post)) return MediaError{MediaError::Forbidden, "no permission"};
+
+        auto rows = db()->execSqlSync(
+            "SELECT * FROM media_assets WHERE post_id = ? AND status = 'ready' ORDER BY id",
+            postId);
+        std::vector<MediaAsset> out;
+        out.reserve(rows.size());
+        for (const auto& r : rows) out.push_back(rowToMedia(r));
+        return out;
+    } catch (const std::exception& e) {
+        return MediaError{MediaError::InternalError, e.what()};
+    }
+}
+
 MResult<MediaAsset> MediaService::getForDownload(const ViewerContext& vc, std::int64_t mediaId) {
     try {
         auto rows = db()->execSqlSync(

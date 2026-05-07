@@ -199,7 +199,7 @@ void configureAuthRoutes(std::shared_ptr<AuthService> authService) {
             try {
                 auto db = drogon::app().getDbClient("monggle_db");
                 db->execSqlAsync(
-                    "SELECT email, display_name FROM users WHERE id = ?",
+                    "SELECT email, display_name, avatar_path FROM users WHERE id = ?",
                     [cb, userId](const drogon::orm::Result& rows) {
                         if (rows.size() == 0) {
                             (*cb)(problemJson(drogon::k404NotFound, "user_not_found",
@@ -210,6 +210,8 @@ void configureAuthRoutes(std::shared_ptr<AuthService> authService) {
                         body["user_id"]      = static_cast<Json::Int64>(*userId);
                         body["email"]        = rows[0]["email"].as<std::string>();
                         body["display_name"] = rows[0]["display_name"].as<std::string>();
+                        body["has_avatar"]   = !rows[0]["avatar_path"].isNull() &&
+                                               !rows[0]["avatar_path"].as<std::string>().empty();
                         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
                         resp->setStatusCode(drogon::k200OK);
                         (*cb)(resp);

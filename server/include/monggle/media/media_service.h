@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace monggle {
 
@@ -64,6 +65,9 @@ public:
 
     // 다운로드 권한 체크 — 별도 매트릭스 (기획 8.3)
     MResult<MediaAsset> getForDownload(const ViewerContext& vc, std::int64_t mediaId);
+
+    // 글에 첨부된 미디어 목록 (피드/타임라인 카드 미리보기용)
+    MResult<std::vector<MediaAsset>> listForPost(const ViewerContext& vc, std::int64_t postId);
 
 private:
     std::string storageRoot_;

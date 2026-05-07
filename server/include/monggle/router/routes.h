@@ -9,6 +9,7 @@ class PostsService;
 class SnapshotService;
 class FollowsService;
 class MediaService;
+class ProfileService;
 
 void configureHealthRoutes();
 void configureAuthRoutes(std::shared_ptr<AuthService> authService);
@@ -22,5 +23,7 @@ void configureMediaRoutes(std::shared_ptr<AuthService> authService,
                           std::shared_ptr<FollowsService> followsService,
                           std::shared_ptr<MediaService> mediaService,
                           std::string storageRoot);
+void configureProfileRoutes(std::shared_ptr<AuthService> authService,
+                            std::shared_ptr<ProfileService> profileService);
 
 } // namespace monggle

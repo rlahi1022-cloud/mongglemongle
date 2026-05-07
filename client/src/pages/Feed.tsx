@@ -9,6 +9,7 @@ import {
   posts,
   social,
   uploadMedia,
+  POST_BODY_MAX,
   type FeedItem,
   type Visibility,
 } from "@/api/client";
@@ -80,10 +81,14 @@ export function FeedPage() {
             <Textarea
               placeholder="오늘 무엇을 했나요? 시간이 흐른 뒤 다시 꺼내볼 한 줄."
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onChange={(e) => setBody(e.target.value.slice(0, POST_BODY_MAX))}
               rows={4}
+              maxLength={POST_BODY_MAX}
               className="rounded-2xl"
             />
+            <div className={`text-xs text-right ${body.length > POST_BODY_MAX * 0.9 ? "text-destructive" : "text-muted-foreground"}`}>
+              {body.length} / {POST_BODY_MAX}
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               <VisibilitySelect value={visibility} onChange={setVisibility} />
               <input
@@ -102,7 +107,7 @@ export function FeedPage() {
         </CardContent>
       </Card>
 
-      {error && <div className="text-sm text-white bg-destructive/80 rounded-2xl px-4 py-2">{error}</div>}
+      {error && <div className="cloud-card text-sm text-destructive font-medium px-4 py-2">{error}</div>}
 
       {items.length === 0 && !loading && (
         <Card className="cloud-card">
@@ -115,6 +120,8 @@ export function FeedPage() {
       {items.map((it) => (
         <PostCard
           key={it.id}
+          postId={it.id}
+          authorId={it.user_id}
           authorName={it.author_name}
           body={it.body}
           visibility={it.visibility}

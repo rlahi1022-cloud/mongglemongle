@@ -243,8 +243,44 @@ export interface MeProfile {
   user_id: number;
   email: string;
   display_name: string;
+  has_avatar: boolean;
 }
 
 export const me = {
   whoami: () => api<MeProfile>("/me"),
 };
+
+export const profile = {
+  uploadAvatar: async (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api<{ avatar_path: string }>("/me/avatar", { method: "PUT", body: fd });
+  },
+  // 브라우저 <img> 용. 캐시 무효화 위해 bust(timestamp). 비공개 토큰 안 붙이고
+  // 공개 엔드포인트로 단순화 (아바타는 누구나 볼 수 있음).
+  avatarUrl: (userId: number, bust?: number) =>
+    `${API_BASE}/users/${userId}/avatar${bust ? `?v=${bust}` : ""}`,
+};
+
+export interface PostMedia {
+  id: number;
+  post_id: number;
+  kind: "photo" | "video";
+  mime_type: string;
+  width_px: number;
+  height_px: number;
+  has_thumb: boolean;
+  has_poster: boolean;
+}
+
+export const media = {
+  listForPost: (postId: number) =>
+    api<{ items: PostMedia[] }>(`/posts/${postId}/media`),
+  // <img>용 단순 URL. friends/private 글은 anon 접근시 403이지만 우리는
+  // 보통 본인이 본 피드 안에서만 호출하니 OK. (서명 URL은 후속.)
+  viewUrl: (mediaId: number) => `${API_BASE}/media/${mediaId}/view`,
+  thumbUrl: (mediaId: number) => `${API_BASE}/media/${mediaId}/thumb`,
+};
+
+// 글 본문 글자수 제한 (백엔드도 동일 적용)
+export const POST_BODY_MAX = 1000;

@@ -28,15 +28,17 @@ export function SearchPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-bold text-white drop-shadow">🔍 내 글 검색</h1>
-      <p className="text-white/80 text-sm -mt-2">
-        본인 글에서 키워드를 찾습니다. 의미 검색은 AI 허브 도입 후 예정.
-      </p>
+      <div className="cloud-card px-5 py-4">
+        <h1 className="text-2xl font-bold text-foreground">🔍 내 글 검색</h1>
+        <p className="text-foreground/70 text-sm mt-1">
+          본인 글에서 키워드를 찾습니다. 의미 검색은 AI 허브 도입 후 예정.
+        </p>
+      </div>
       <form onSubmit={onSubmit} className="flex gap-2">
-        <Input placeholder="키워드..." value={q} onChange={(e) => setQ(e.target.value)} className="rounded-2xl bg-white" />
+        <Input placeholder="키워드..." value={q} onChange={(e) => setQ(e.target.value)} className="rounded-2xl bg-white shadow-md" />
         <Button type="submit" disabled={loading || !q.trim()} className="rounded-2xl">검색</Button>
       </form>
-      {error && <div className="text-sm text-white bg-destructive/80 rounded-2xl px-4 py-2">{error}</div>}
+      {error && <div className="cloud-card text-sm text-destructive font-medium px-4 py-2">{error}</div>}
       {searched && items.length === 0 && !loading && (
         <Card className="cloud-card">
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -47,6 +49,8 @@ export function SearchPage() {
       {items.map((p) => (
         <PostCard
           key={p.id}
+          postId={p.id}
+          authorId={p.user_id}
           authorName="나"
           body={p.body}
           visibility={p.visibility}

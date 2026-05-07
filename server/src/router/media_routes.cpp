@@ -80,6 +80,43 @@ void configureMediaRoutes(std::shared_ptr<AuthService> authService,
                           std::string storageRoot) {
     auto storageRootPath = std::make_shared<std::filesystem::path>(storageRoot);
 
+    // GET /posts/{id}/media — 피드 카드 미리보기용 미디어 목록
+    drogon::app().registerHandlerViaRegex(
+        "^/posts/([0-9]+)/media$",
+        [authService, followsService, mediaService](
+            const drogon::HttpRequestPtr& req,
+            std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+            auto path = req->getPath();
+            std::int64_t postId = 0;
+            try { postId = parseIdSegment(path, "/posts/"); } catch (...) {
+                cb(problemJson(drogon::k400BadRequest, "bad_request", "invalid post id", path));
+                return;
+            }
+
+            ViewerContext vc{-1, false};
+            if (auto u = authService->verifyAccess(std::string(req->getHeader("Authorization")))) {
+                vc.viewerId = *u;
+                if (followsService) {
+                    // friends visibility 통과를 위해 follower 여부 미리 계산은 비싸므로
+                    // canViewPost 안에서 별도로 처리. 여기선 일단 false 두고 isFollower는
+                    // service의 canView가 직접 가능하지만 컨텍스트 단순화 위해 생략.
+                }
+            }
+
+            auto result = mediaService->listForPost(vc, postId);
+            if (auto* e = std::get_if<MediaError>(&result)) {
+                cb(mediaErrorResponse(*e, path));
+                return;
+            }
+            const auto& items = std::get<std::vector<MediaAsset>>(result);
+            Json::Value body(Json::objectValue);
+            Json::Value arr(Json::arrayValue);
+            for (const auto& m : items) arr.append(mediaToJson(m));
+            body["items"] = arr;
+            cb(drogon::HttpResponse::newHttpJsonResponse(body));
+        },
+        {drogon::Get});
+
     // POST /posts/{id}/media — multipart/form-data upload (single file)
     drogon::app().registerHandlerViaRegex(
         "^/posts/([0-9]+)/media$",

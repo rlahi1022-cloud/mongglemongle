@@ -39,8 +39,10 @@ export function MyTimelinePage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-bold text-white drop-shadow">📓 내 글</h1>
-      {error && <div className="text-sm text-white bg-destructive/80 rounded-2xl px-4 py-2">{error}</div>}
+      <div className="cloud-card px-5 py-3">
+        <h1 className="text-2xl font-bold text-foreground">📓 내 글</h1>
+      </div>
+      {error && <div className="cloud-card text-sm text-destructive font-medium px-4 py-2">{error}</div>}
       {items.length === 0 && !loading && (
         <Card className="cloud-card">
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -51,6 +53,8 @@ export function MyTimelinePage() {
       {items.map((p) => (
         <PostCard
           key={p.id}
+          postId={p.id}
+          authorId={p.user_id}
           authorName="나"
           body={p.body}
           visibility={p.visibility}
