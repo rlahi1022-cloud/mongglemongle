@@ -4,8 +4,9 @@
 
 namespace monggle {
 
-class EntryService;
+class AuthService;
 
-void configureRoutes(std::shared_ptr<EntryService> entryService);
+void configureHealthRoutes();
+void configureAuthRoutes(std::shared_ptr<AuthService> authService);
 
 } // namespace monggle

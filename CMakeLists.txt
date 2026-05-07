@@ -9,19 +9,32 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-find_package(Drogon CONFIG REQUIRED)
+find_package(Drogon  CONFIG REQUIRED)
+find_package(cpp-jwt CONFIG REQUIRED)
+find_package(OpenSSL        REQUIRED)
+
+# libcrypt (libxcrypt) for bcrypt via crypt_r()
+find_library(CRYPT_LIBRARY NAMES crypt REQUIRED)
 
 add_executable(mongglemonggle
     server/src/main.cpp
     server/src/app_config.cpp
     server/src/auth/auth_service.cpp
-    server/src/entry/entry_service.cpp
+    server/src/auth/jwt_service.cpp
+    server/src/auth/password_service.cpp
     server/src/event/event_bus.cpp
     server/src/router/routes.cpp
+    server/src/router/auth_routes.cpp
 )
 
 target_include_directories(mongglemonggle PRIVATE
     ${CMAKE_SOURCE_DIR}/server/include
 )
 
-target_link_libraries(mongglemonggle PRIVATE Drogon::Drogon)
+target_link_libraries(mongglemonggle PRIVATE
+    Drogon::Drogon
+    cpp-jwt::cpp-jwt
+    OpenSSL::Crypto
+    OpenSSL::SSL
+    ${CRYPT_LIBRARY}
+)

@@ -1,7 +1,6 @@
 #include "monggle/app_config.h"
 #include "monggle/auth/auth_service.h"
-#include "monggle/event/event_bus.h"
-#include "monggle/entry/entry_service.h"
+#include "monggle/auth/jwt_service.h"
 #include "monggle/router/routes.h"
 
 #include <drogon/drogon.h>
@@ -12,11 +11,17 @@ int main() {
     auto cfg = monggle::AppConfig::loadFromEnv();
     cfg.log();
 
-    auto authService  = std::make_shared<monggle::AuthService>();
-    auto eventBus     = std::make_shared<monggle::EventBus>();
-    auto entryService = std::make_shared<monggle::EntryService>(*authService, *eventBus);
+    auto jwtService = std::make_shared<monggle::JwtService>(
+        monggle::readPemFile(cfg.jwtPrivateKeyPath),
+        monggle::readPemFile(cfg.jwtPublicKeyPath),
+        cfg.jwtIssuer,
+        cfg.jwtAccessTtl,
+        cfg.jwtRefreshTtl);
 
-    monggle::configureRoutes(entryService);
+    auto authService = std::make_shared<monggle::AuthService>(jwtService);
+
+    monggle::configureHealthRoutes();
+    monggle::configureAuthRoutes(authService);
 
     drogon::app()
         .createDbClient(
@@ -27,18 +32,18 @@ int main() {
             cfg.dbUser,
             cfg.dbPassword,
             cfg.dbPoolSize,
-            "",                 // filename (sqlite only)
-            "monggle_db",       // client name
-            false,              // auto batch (postgres only)
+            "",
+            "monggle_db",
+            false,
             "utf8mb4")
         .createRedisClient(
             cfg.redisHost,
             cfg.redisPort,
-            "monggle_redis",    // client name
-            "",                 // password
+            "monggle_redis",
+            "",
             cfg.redisPoolSize,
-            true,               // is fast
-            0)                  // db index
+            true,
+            0)
         .addListener(cfg.httpHost, cfg.httpPort)
         .setThreadNum(0)
         .setLogLevel(trantor::Logger::kInfo);

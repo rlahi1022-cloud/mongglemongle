@@ -39,6 +39,7 @@ core.*
 .env
 .env.local
 config/local.yaml
+keys/
 
 # Docker volumes (managed via docker-compose volumes:, but defensive)
 .docker-data/

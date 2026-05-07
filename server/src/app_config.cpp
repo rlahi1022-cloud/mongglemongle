@@ -28,6 +28,13 @@ std::size_t envOrSize(const char* name, std::size_t fallback) {
     return fallback;
 }
 
+std::int64_t envOrI64(const char* name, std::int64_t fallback) {
+    if (const char* v = std::getenv(name); v && *v) {
+        return static_cast<std::int64_t>(std::stoll(v));
+    }
+    return fallback;
+}
+
 } // namespace
 
 AppConfig AppConfig::loadFromEnv() {
@@ -45,6 +52,12 @@ AppConfig AppConfig::loadFromEnv() {
     c.redisHost      = envOr   ("MONGGLE_REDIS_HOST",     "127.0.0.1");
     c.redisPort      = envOrU16("MONGGLE_REDIS_PORT",     6379);
     c.redisPoolSize  = envOrSize("MONGGLE_REDIS_POOL_SIZE", 4);
+
+    c.jwtIssuer         = envOr("MONGGLE_JWT_ISSUER",            "monggle.local");
+    c.jwtPrivateKeyPath = envOr("MONGGLE_JWT_PRIVATE_KEY_PATH",  "keys/dev_jwt_private.pem");
+    c.jwtPublicKeyPath  = envOr("MONGGLE_JWT_PUBLIC_KEY_PATH",   "keys/dev_jwt_public.pem");
+    c.jwtAccessTtl      = std::chrono::seconds(envOrI64("MONGGLE_JWT_ACCESS_TTL_SECONDS",   900));    // 15m
+    c.jwtRefreshTtl     = std::chrono::seconds(envOrI64("MONGGLE_JWT_REFRESH_TTL_SECONDS",  60 * 60 * 24 * 14)); // 14d
     return c;
 }
 
@@ -53,7 +66,10 @@ void AppConfig::log() const {
              << " db=" << dbUser << "@" << dbHost << ":" << dbPort << "/" << dbName
              << " (pool=" << dbPoolSize << ")"
              << " redis=" << redisHost << ":" << redisPort
-             << " (pool=" << redisPoolSize << ")";
+             << " (pool=" << redisPoolSize << ")"
+             << " jwt_issuer=" << jwtIssuer
+             << " jwt_access_ttl=" << jwtAccessTtl.count() << "s"
+             << " jwt_refresh_ttl=" << jwtRefreshTtl.count() << "s";
 }
 
 } // namespace monggle
