@@ -12,6 +12,7 @@ class MediaService;
 class ProfileService;
 class CommentsService;
 class NotificationsService;
+class BlocksService;
 
 void configureHealthRoutes();
 void configureAuthRoutes(std::shared_ptr<AuthService> authService);
@@ -26,6 +27,8 @@ void configureCommentsRoutes(std::shared_ptr<AuthService> authService,
                              std::shared_ptr<CommentsService> commentsService);
 void configureNotificationsRoutes(std::shared_ptr<AuthService> authService,
                                   std::shared_ptr<NotificationsService> notif);
+void configureBlocksRoutes(std::shared_ptr<AuthService> authService,
+                           std::shared_ptr<BlocksService> blocksService);
 void configureMediaRoutes(std::shared_ptr<AuthService> authService,
                           std::shared_ptr<FollowsService> followsService,
                           std::shared_ptr<MediaService> mediaService,

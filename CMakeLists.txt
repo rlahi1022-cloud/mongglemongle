@@ -24,6 +24,7 @@ add_executable(mongglemonggle
     server/src/auth/jwt_service.cpp
     server/src/auth/password_service.cpp
     server/src/event/event_bus.cpp
+    server/src/blocks/blocks_service.cpp
     server/src/comments/comments_service.cpp
     server/src/follows/follows_service.cpp
     server/src/media/media_service.cpp
@@ -43,6 +44,7 @@ add_executable(mongglemonggle
     server/src/router/profile_routes.cpp
     server/src/router/comments_routes.cpp
     server/src/router/notifications_routes.cpp
+    server/src/router/blocks_routes.cpp
 )
 
 target_include_directories(mongglemonggle PRIVATE

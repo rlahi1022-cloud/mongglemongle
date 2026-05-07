@@ -194,21 +194,6 @@ npm run dev               # → http://127.0.0.1:5173
 
 ---
 
-## 의도적으로 보류한 것 (follow-up)
-
-| 항목 | 사유 |
-|---|---|
-| S3/MinIO 직접 업로드 + 서명 URL | MVP 단축, 로컬 FS로 대체 |
-| Redis L2 캐시 + Push fanout | Drogon 1.8.7 RedisClient segfault |
-| AI 허브 (BGE-m3 임베딩) | 외부 비용 분리 |
-| EventBus 워터마크 | 현재 EventBus 미구현 |
-| AWS 인프라 자동화 + 부하 테스트 | 화면 시연 후 |
-| 반응형 모바일 사이드바 | 데스크톱 우선 |
-
-자세한 사유는 [docs/DEVLOG.md](docs/DEVLOG.md) 의 "보류" 섹션 참고.
-
----
-
 ## 환경변수
 
 | 이름 | 기본값 |

@@ -260,7 +260,9 @@ export const profile = {
   uploadAvatar: async (file: File) => {
     const fd = new FormData();
     fd.append("file", file);
-    return api<{ avatar_path: string }>("/me/avatar", { method: "PUT", body: fd });
+    // Drogon 1.8.7 MultiPartParser가 PUT method body를 잘 못 읽어서 POST로.
+    // 백엔드는 {Put, Post} 둘 다 받음.
+    return api<{ avatar_path: string }>("/me/avatar", { method: "POST", body: fd });
   },
   updateDisplayName: (display_name: string) =>
     api<{ display_name: string }>("/me", {
@@ -315,6 +317,19 @@ export interface Notification {
 export const notifications = {
   recent: () => api<{ items: Notification[]; unread: number }>("/me/notifications"),
   markAllRead: () => api<void>("/me/notifications/read", { method: "POST" }),
+};
+
+export interface BlockedUser {
+  id: number;
+  email: string;
+  display_name: string;
+  blocked_at: string;
+}
+
+export const blocks = {
+  list: () => api<{ items: BlockedUser[] }>("/me/blocks"),
+  add: (userId: number) => api<void>(`/users/${userId}/block`, { method: "POST" }),
+  remove: (userId: number) => api<void>(`/users/${userId}/block`, { method: "DELETE" }),
 };
 
 export interface PostMedia {

@@ -131,6 +131,9 @@ FResult<FollowsService::FeedPage> FollowsService::feed(std::int64_t viewerId,
             "       p.created_at, p.updated_at, u.display_name AS author_name "
             "FROM posts p JOIN users u ON u.id = p.user_id "
             "WHERE p.deleted_at IS NULL "
+            // 양방향 차단 필터 — 본인이 차단했거나 본인을 차단한 사용자의 글 제외
+            "  AND p.user_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?) "
+            "  AND p.user_id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id = ?) "
             "  AND ( "
             "    p.user_id = ? "
             "    OR ( p.user_id IN (SELECT followee_id FROM follows WHERE follower_id = ?) "
@@ -141,8 +144,8 @@ FResult<FollowsService::FeedPage> FollowsService::feed(std::int64_t viewerId,
         sql += " ORDER BY p.id DESC LIMIT ?";
 
         drogon::orm::Result rows = (cursor > 0)
-            ? db()->execSqlSync(sql, viewerId, viewerId, cursor, fetchN)
-            : db()->execSqlSync(sql, viewerId, viewerId, fetchN);
+            ? db()->execSqlSync(sql, viewerId, viewerId, viewerId, viewerId, cursor, fetchN)
+            : db()->execSqlSync(sql, viewerId, viewerId, viewerId, viewerId, fetchN);
 
         FeedPage page;
         for (const auto& r : rows) {

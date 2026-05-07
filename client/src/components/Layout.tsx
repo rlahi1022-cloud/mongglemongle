@@ -9,18 +9,18 @@ import { cn } from "@/lib/utils";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "px-3 py-1.5 rounded-2xl text-sm font-medium transition-all whitespace-nowrap",
+    "px-3 py-1.5 rounded-2xl text-sm font-bold transition-all whitespace-nowrap",
     isActive
-      ? "bg-primary text-primary-foreground shadow"
-      : "text-foreground/80 hover:bg-primary/10 hover:text-primary"
+      ? "bg-white text-primary shadow"
+      : "text-white hover:bg-white/15"
   );
 
 const mobileNavClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "block px-4 py-2.5 rounded-2xl text-sm transition-all",
+    "block px-4 py-2.5 rounded-2xl text-sm font-bold transition-all",
     isActive
-      ? "bg-primary text-primary-foreground"
-      : "text-foreground/80 hover:bg-secondary"
+      ? "bg-white text-primary"
+      : "text-white hover:bg-white/15"
   );
 
 export function Layout() {
@@ -36,27 +36,27 @@ export function Layout() {
       <div className="starfield" aria-hidden />
       <div className="starfield-extra" aria-hidden />
 
-      <header className="relative z-20 bg-white/75 backdrop-blur-2xl border-b border-primary/20 shadow-sm">
+      <header className="relative z-20 bg-[hsl(228_55%_22%)]/85 backdrop-blur-2xl border-b border-white/15 shadow-md text-white">
         <div className="container flex h-16 items-center gap-3">
           {/* 모바일 햄버거 */}
           <button
-            className="md:hidden p-2 rounded-xl hover:bg-secondary"
+            className="md:hidden p-2 rounded-xl hover:bg-white/15"
             onClick={() => setMenuOpen((v) => !v)}
             aria-label="메뉴"
           >
-            <span className="block w-5 h-0.5 bg-foreground mb-1" />
-            <span className="block w-5 h-0.5 bg-foreground mb-1" />
-            <span className="block w-5 h-0.5 bg-foreground" />
+            <span className="block w-5 h-0.5 bg-white mb-1" />
+            <span className="block w-5 h-0.5 bg-white mb-1" />
+            <span className="block w-5 h-0.5 bg-white" />
           </button>
 
           <Link to="/" className="flex items-center gap-2 shrink-0">
             <img
               src="/mascot.png"
               alt=""
-              className="w-10 h-10 animate-float select-none"
+              className="w-10 h-10 animate-float select-none drop-shadow-lg"
               draggable={false}
             />
-            <span className="text-lg font-bold tracking-tight hidden sm:inline">몽글몽글</span>
+            <span className="text-lg font-bold tracking-tight hidden sm:inline text-white">몽글몽글</span>
           </Link>
 
           {/* 데스크톱 메뉴 */}
@@ -73,15 +73,13 @@ export function Layout() {
 
           {/* 테마 선택 */}
           <div className="relative hidden sm:block">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="rounded-2xl"
+            <button
+              className="px-3 py-1.5 rounded-2xl text-sm font-bold text-white hover:bg-white/15 transition"
               onClick={() => setThemeOpen((v) => !v)}
               title="테마 변경"
             >
               {theme.emoji} <span className="hidden lg:inline ml-1">{theme.label}</span>
-            </Button>
+            </button>
             {themeOpen && (
               <div
                 className="absolute right-0 mt-2 w-44 cloud-card p-2 z-30"
@@ -107,10 +105,10 @@ export function Layout() {
           {userId && (
             <Link
               to="/profile"
-              className="flex items-center gap-2 rounded-2xl px-2 py-1 hover:bg-secondary transition"
+              className="flex items-center gap-2 rounded-2xl px-2 py-1 hover:bg-white/15 transition"
               title="프로필 수정"
             >
-              <div className="relative h-9 w-9 rounded-full bg-secondary text-foreground grid place-items-center text-sm font-bold overflow-hidden">
+              <div className="relative h-9 w-9 rounded-full bg-white text-primary grid place-items-center text-sm font-bold overflow-hidden ring-2 ring-white/30">
                 <img
                   src={profile.avatarUrl(userId, bust)}
                   alt=""
@@ -122,24 +120,22 @@ export function Layout() {
                 </span>
               </div>
               <div className="leading-tight text-sm hidden lg:block">
-                <div className="font-medium">{displayName ?? `user #${userId}`}</div>
-                <div className="text-xs text-muted-foreground">#{userId}</div>
+                <div className="font-bold text-white">{displayName ?? `user #${userId}`}</div>
+                <div className="text-xs text-white/70">#{userId}</div>
               </div>
             </Link>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="rounded-2xl hidden sm:inline-flex"
+          <button
+            className="hidden sm:inline-flex px-3 py-1.5 rounded-2xl text-sm font-bold text-white/90 hover:bg-white/15 transition"
             onClick={async () => { await logout(); nav("/login"); }}
           >
             로그아웃
-          </Button>
+          </button>
         </div>
 
         {/* 모바일 드로어 */}
         {menuOpen && (
-          <div className="md:hidden border-t bg-white/95 backdrop-blur">
+          <div className="md:hidden border-t border-white/15 bg-[hsl(228_55%_22%)]/95 backdrop-blur">
             <div className="container py-3 space-y-1">
               <NavLink to="/feed" className={mobileNavClass} onClick={() => setMenuOpen(false)}>☁️ 피드</NavLink>
               <NavLink to="/me/timeline" className={mobileNavClass} onClick={() => setMenuOpen(false)}>📓 내 글</NavLink>
@@ -148,7 +144,7 @@ export function Layout() {
               <NavLink to="/profile" className={mobileNavClass} onClick={() => setMenuOpen(false)}>👤 프로필</NavLink>
               <button
                 onClick={async () => { setMenuOpen(false); await logout(); nav("/login"); }}
-                className="block w-full text-left px-4 py-2.5 rounded-2xl text-sm text-destructive hover:bg-destructive/10"
+                className="block w-full text-left px-4 py-2.5 rounded-2xl text-sm font-bold text-white/90 hover:bg-white/15"
               >
                 로그아웃
               </button>

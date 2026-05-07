@@ -1,33 +1,39 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { THEMES, useTheme } from "@/theme/ThemeContext";
 import { useAuth } from "@/auth/AuthContext";
-import { ApiError, profile } from "@/api/client";
+import { ApiError, blocks, profile, social, type BlockedUser, type UserBrief } from "@/api/client";
 import { cn } from "@/lib/utils";
 
-type Section = "photo" | "name" | "password" | "theme";
+type Section = "photo" | "name" | "password" | "friends" | "blocks";
 
-const VERIFY_TTL_MS = 5 * 60_000; // 5분
+const VERIFY_TTL_MS = 15 * 60_000; // 15분
 
 const SECTION_META: Array<{ id: Section; label: string; emoji: string; locked: boolean }> = [
   { id: "photo",    label: "프로필 사진", emoji: "📸", locked: false },
   { id: "name",     label: "표시 이름",   emoji: "✏️", locked: true  },
   { id: "password", label: "비밀번호",    emoji: "🔑", locked: true  },
-  { id: "theme",    label: "테마",        emoji: "🎨", locked: true  },
+  { id: "friends",  label: "친구 목록",   emoji: "👥", locked: false },
+  { id: "blocks",   label: "블랙리스트",  emoji: "🚫", locked: true  },
 ];
 
 export function ProfilePage() {
   const { userId, displayName, email, refreshProfile } = useAuth();
-  const { theme, setTheme } = useTheme();
   const nav = useNavigate();
 
   const [section, setSection] = useState<Section>("photo");
   const [verifiedUntil, setVerifiedUntil] = useState<number>(0);
+  const [, setTick] = useState(0);
+  // 잠금 만료 표시 갱신을 위한 1초 틱
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 1000);
+    return () => window.clearInterval(id);
+  }, []);
   const verified = Date.now() < verifiedUntil;
+  const remainingMin = verified ? Math.ceil((verifiedUntil - Date.now()) / 60_000) : 0;
 
   if (!userId) {
     nav("/login");
@@ -39,7 +45,6 @@ export function ProfilePage() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-5 max-w-4xl mx-auto">
-      {/* 좌측 사이드바 메뉴 */}
       <aside className="cloud-card p-2 h-fit md:sticky md:top-20">
         <div className="px-3 py-2 text-xs text-muted-foreground">프로필</div>
         {SECTION_META.map((m) => (
@@ -53,19 +58,16 @@ export function ProfilePage() {
           >
             <span>{m.emoji}</span>
             <span className="flex-1">{m.label}</span>
-            {m.locked && (
-              <span className="text-xs">{verified ? "🔓" : "🔒"}</span>
-            )}
+            {m.locked && <span className="text-xs">{verified ? "🔓" : "🔒"}</span>}
           </button>
         ))}
         {verified && (
           <div className="px-3 py-2 mt-1 border-t text-xs text-emerald-600">
-            잠금 해제됨 (5분간)
+            잠금 해제 (~{remainingMin}분)
           </div>
         )}
       </aside>
 
-      {/* 우측 컨텐츠 */}
       <div className="space-y-5">
         <div className="cloud-card px-5 py-4">
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -73,22 +75,23 @@ export function ProfilePage() {
           </h1>
           <p className="text-foreground/70 text-sm mt-1">
             {meta.locked
-              ? "민감한 변경입니다. 비밀번호 인증 후 변경 가능."
+              ? "민감한 변경입니다. 비밀번호 인증 후 15분간 잠금 해제."
+              : section === "friends"
+              ? "내가 팔로우한 사람과 나를 팔로우한 사람."
               : "사진은 즉시 변경됩니다."}
           </p>
         </div>
 
         {needGate ? (
-          <PasswordGate
-            onVerified={() => setVerifiedUntil(Date.now() + VERIFY_TTL_MS)}
-          />
+          <PasswordGate onVerified={() => setVerifiedUntil(Date.now() + VERIFY_TTL_MS)} />
         ) : (
           <>
             {section === "photo"    && <PhotoForm userId={userId} displayName={displayName} />}
             {section === "name"     && <NameForm initial={displayName ?? ""} email={email} userId={userId}
-                                                  onSaved={async () => { await refreshProfile(); }} />}
+                                                  onSaved={refreshProfile} />}
             {section === "password" && <PasswordForm onChanged={() => setVerifiedUntil(0)} />}
-            {section === "theme"    && <ThemeForm theme={theme} setTheme={setTheme} />}
+            {section === "friends"  && <FriendsList />}
+            {section === "blocks"   && <BlocksList />}
           </>
         )}
       </div>
@@ -116,7 +119,7 @@ function PasswordGate({ onVerified }: { onVerified: () => void }) {
     <Card className="cloud-card">
       <CardHeader>
         <CardTitle className="text-base">🔒 비밀번호 인증 필요</CardTitle>
-        <CardDescription>이 항목을 변경하려면 현재 비밀번호를 입력하세요. 5분간 유지됩니다.</CardDescription>
+        <CardDescription>이 항목을 변경하려면 현재 비밀번호를 입력하세요. 15분간 유지됩니다.</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="space-y-3">
@@ -162,7 +165,7 @@ function PhotoForm({ userId, displayName }: { userId: number; displayName: strin
     <Card className="cloud-card">
       <CardHeader>
         <CardTitle className="text-base">사진</CardTitle>
-        <CardDescription>정사각형 256x256 jpg로 자동 가공.</CardDescription>
+        <CardDescription>jpg/png/webp 등. 정사각형 256x256 jpg로 자동 가공.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex items-center gap-4">
@@ -173,9 +176,7 @@ function PhotoForm({ userId, displayName }: { userId: number; displayName: strin
               className="absolute inset-0 w-full h-full object-cover"
               onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
             />
-            <span className="z-0">
-              {(displayName ?? "?").trim().charAt(0).toUpperCase() || "?"}
-            </span>
+            <span className="z-0">{(displayName ?? "?").trim().charAt(0).toUpperCase() || "?"}</span>
           </div>
           <div className="space-y-2">
             <Button onClick={() => fileRef.current?.click()} disabled={uploading} className="rounded-2xl">
@@ -198,12 +199,10 @@ function NameForm({ initial, email, userId, onSaved }: {
   const [name, setName] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    setBusy(true);
-    setMsg(null);
+    setBusy(true); setMsg(null);
     try {
       await profile.updateDisplayName(name.trim());
       await onSaved();
@@ -243,7 +242,6 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
   const [newPw2, setNewPw2] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMsg(null);
@@ -289,30 +287,175 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-function ThemeForm({ theme, setTheme }: { theme: ReturnType<typeof useTheme>["theme"]; setTheme: ReturnType<typeof useTheme>["setTheme"] }) {
+function FriendsList() {
+  const [following, setFollowing] = useState<UserBrief[] | null>(null);
+  const [followers, setFollowers] = useState<UserBrief[] | null>(null);
+  const [tab, setTab] = useState<"following" | "followers">("following");
+
+  const refresh = async () => {
+    try {
+      const a = await social.following();
+      const b = await social.followers();
+      setFollowing(a.items);
+      setFollowers(b.items);
+    } catch { /* */ }
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const onUnfollow = async (id: number) => {
+    if (!confirm("언팔로우할까요?")) return;
+    try {
+      await social.unfollow(id);
+      setFollowing((prev) => (prev ?? []).filter((u) => u.id !== id));
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : "실패");
+    }
+  };
+
+  const list = tab === "following" ? following : followers;
+
   return (
     <Card className="cloud-card">
       <CardHeader>
-        <CardTitle className="text-base">테마</CardTitle>
-        <CardDescription>배경 그라데이션을 골라보세요.</CardDescription>
+        <CardTitle className="text-base">친구</CardTitle>
+        <CardDescription>팔로잉/팔로워 목록.</CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 gap-3">
-          {THEMES.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTheme(t.id)}
-              className={cn(
-                "rounded-2xl border-2 p-3 text-left transition relative overflow-hidden h-24",
-                t.id === theme.id ? "border-primary shadow-md" : "border-transparent hover:border-border"
-              )}
-              style={{ backgroundImage: t.bgGradient, backgroundSize: "100% 200%" }}
-            >
-              <div className="bg-white/80 backdrop-blur-sm rounded-xl px-3 py-2 inline-block">
-                <div className="font-medium">{t.emoji} {t.label}</div>
-                {t.id === theme.id && <div className="text-xs text-primary mt-0.5">현재 사용중</div>}
+      <CardContent className="space-y-3">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setTab("following")}
+            className={cn(
+              "px-3 py-1.5 rounded-2xl text-sm font-medium transition",
+              tab === "following" ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground/70 hover:bg-secondary/80"
+            )}
+          >
+            팔로잉 {following?.length ?? "—"}
+          </button>
+          <button
+            onClick={() => setTab("followers")}
+            className={cn(
+              "px-3 py-1.5 rounded-2xl text-sm font-medium transition",
+              tab === "followers" ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground/70 hover:bg-secondary/80"
+            )}
+          >
+            팔로워 {followers?.length ?? "—"}
+          </button>
+        </div>
+        {!list && <div className="text-sm text-muted-foreground">불러오는 중...</div>}
+        {list && list.length === 0 && (
+          <div className="text-sm text-muted-foreground py-6 text-center">아무도 없어요.</div>
+        )}
+        <div className="space-y-2">
+          {list?.map((u) => (
+            <div key={u.id} className="flex items-center gap-3 px-3 py-2 rounded-2xl bg-secondary/50">
+              <div className="relative h-9 w-9 shrink-0 rounded-full bg-white text-primary grid place-items-center text-sm font-bold overflow-hidden">
+                <img
+                  src={profile.avatarUrl(u.id)}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                />
+                <span className="z-0">{u.display_name?.charAt(0)?.toUpperCase() || "?"}</span>
               </div>
-            </button>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{u.display_name}</div>
+                <div className="text-xs text-muted-foreground truncate">#{u.id} · {u.email}</div>
+              </div>
+              {tab === "following" && (
+                <button
+                  onClick={() => onUnfollow(u.id)}
+                  className="text-xs text-muted-foreground hover:text-destructive"
+                >
+                  언팔로우
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BlocksList() {
+  const [items, setItems] = useState<BlockedUser[] | null>(null);
+  const [input, setInput] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const r = await blocks.list();
+      setItems(r.items);
+    } catch { /* */ }
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const onAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const id = Number(input);
+    if (!id) return;
+    setBusy(true); setMsg(null);
+    try {
+      await blocks.add(id);
+      setInput("");
+      setMsg(`#${id} 차단 완료`);
+      await refresh();
+    } catch (err) {
+      setMsg(err instanceof ApiError ? err.message : "실패");
+    } finally { setBusy(false); }
+  };
+
+  const onRemove = async (id: number) => {
+    if (!confirm(`#${id} 차단을 해제할까요?`)) return;
+    try {
+      await blocks.remove(id);
+      setItems((prev) => (prev ?? []).filter((u) => u.id !== id));
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : "실패");
+    }
+  };
+
+  return (
+    <Card className="cloud-card">
+      <CardHeader>
+        <CardTitle className="text-base">블랙리스트</CardTitle>
+        <CardDescription>
+          차단된 사용자의 글은 피드에 안 보이고, 서로 follow 관계도 자동 해제됩니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <form onSubmit={onAdd} className="flex gap-2">
+          <Input
+            placeholder="차단할 user id"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            className="rounded-2xl"
+          />
+          <Button type="submit" disabled={busy || !input} className="rounded-2xl">차단</Button>
+        </form>
+        {msg && <div className="text-xs text-muted-foreground">{msg}</div>}
+        {!items && <div className="text-sm text-muted-foreground">불러오는 중...</div>}
+        {items && items.length === 0 && (
+          <div className="text-sm text-muted-foreground py-6 text-center">차단한 사람이 없어요.</div>
+        )}
+        <div className="space-y-2">
+          {items?.map((u) => (
+            <div key={u.id} className="flex items-center gap-3 px-3 py-2 rounded-2xl bg-destructive/5">
+              <div className="relative h-9 w-9 shrink-0 rounded-full bg-secondary text-foreground grid place-items-center text-sm font-bold overflow-hidden">
+                <span>{u.display_name?.charAt(0)?.toUpperCase() || "?"}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{u.display_name}</div>
+                <div className="text-xs text-muted-foreground truncate">#{u.id} · {u.email} · {u.blocked_at.split(" ")[0]}</div>
+              </div>
+              <button
+                onClick={() => onRemove(u.id)}
+                className="text-xs text-primary hover:underline"
+              >
+                해제
+              </button>
+            </div>
           ))}
         </div>
       </CardContent>

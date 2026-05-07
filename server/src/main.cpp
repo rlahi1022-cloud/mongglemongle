@@ -1,6 +1,7 @@
 #include "monggle/app_config.h"
 #include "monggle/auth/auth_service.h"
 #include "monggle/auth/jwt_service.h"
+#include "monggle/blocks/blocks_service.h"
 #include "monggle/comments/comments_service.h"
 #include "monggle/follows/follows_service.h"
 #include "monggle/media/media_service.h"
@@ -36,6 +37,7 @@ int main() {
     auto profileService  = std::make_shared<monggle::ProfileService>(cfg.mediaStorageRoot);
     auto notifService    = std::make_shared<monggle::NotificationsService>();
     auto commentsService = std::make_shared<monggle::CommentsService>(followsService, notifService);
+    auto blocksService   = std::make_shared<monggle::BlocksService>();
 
     // CORS는 라우트 등록 전에 설치
     monggle::installCors(monggle::defaultDevCors());
@@ -53,6 +55,7 @@ int main() {
     monggle::configureProfileRoutes(authService, profileService);
     monggle::configureCommentsRoutes(authService, commentsService);
     monggle::configureNotificationsRoutes(authService, notifService);
+    monggle::configureBlocksRoutes(authService, blocksService);
 
     drogon::app()
         .createDbClient(
