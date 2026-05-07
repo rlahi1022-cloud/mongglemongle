@@ -1,6 +1,7 @@
 #include "monggle/app_config.h"
 #include "monggle/auth/auth_service.h"
 #include "monggle/auth/jwt_service.h"
+#include "monggle/follows/follows_service.h"
 #include "monggle/posts/posts_service.h"
 #include "monggle/posts/snapshot_service.h"
 #include "monggle/router/routes.h"
@@ -21,13 +22,15 @@ int main() {
         cfg.jwtRefreshTtl);
 
     auto authService     = std::make_shared<monggle::AuthService>(jwtService);
-    auto postsService    = std::make_shared<monggle::PostsService>();
+    auto followsService  = std::make_shared<monggle::FollowsService>();
+    auto postsService    = std::make_shared<monggle::PostsService>(followsService);
     auto snapshotService = std::make_shared<monggle::SnapshotService>();
 
     monggle::configureHealthRoutes();
     monggle::configureAuthRoutes(authService);
     monggle::configurePostsRoutes(authService, postsService);
     monggle::configureSnapshotRoutes(authService, snapshotService);
+    monggle::configureFollowsRoutes(authService, followsService);
 
     drogon::app()
         .createDbClient(

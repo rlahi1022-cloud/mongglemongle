@@ -1,4 +1,5 @@
 #include "monggle/posts/posts_service.h"
+#include "monggle/follows/follows_service.h"
 
 #include <drogon/drogon.h>
 #include <drogon/orm/DbClient.h>
@@ -63,14 +64,17 @@ Post rowToPost(const drogon::orm::Row& row) {
     return p;
 }
 
-// 권한 매트릭스 (기획 8.2). C2 시점 follows 미구현이라 'friends'는 author만 통과
-//   → C4 follows 도입 시 isFollower(viewer, author) 추가
-bool canView(std::int64_t viewerId, const Post& p) {
+// 권한 매트릭스 (기획 8.2). 'friends' = follower 관계 (단방향).
+bool canView(std::int64_t viewerId, const Post& p, FollowsService* follows) {
     if (viewerId == p.userId) return true;
     switch (p.visibility) {
-        case Visibility::Public:  return true;
-        case Visibility::Friends: return false;  // TODO C4
-        case Visibility::Private: return false;
+        case Visibility::Public:
+            return true;
+        case Visibility::Friends:
+            // viewerId가 author(p.userId)를 follow 하면 통과
+            return follows && viewerId > 0 && follows->isFollower(viewerId, p.userId);
+        case Visibility::Private:
+            return false;
     }
     return false;
 }
@@ -98,6 +102,9 @@ void insertEvent(const drogon::orm::DbClientPtr& tx,
 }
 
 } // namespace
+
+PostsService::PostsService(std::shared_ptr<FollowsService> follows)
+    : follows_(std::move(follows)) {}
 
 Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest& req) {
     if (req.body.empty()) {
@@ -144,7 +151,7 @@ Result<Post> PostsService::get(std::int64_t viewerId, std::int64_t postId) {
             return PostsError{PostsError::NotFound, "post not found"};
         }
         auto post = rowToPost(rows[0]);
-        if (!canView(viewerId, post)) {
+        if (!canView(viewerId, post, follows_.get())) {
             return PostsError{PostsError::Forbidden, "no permission to view this post"};
         }
         return post;
@@ -263,14 +270,17 @@ Result<TimelinePage> PostsService::timeline(std::int64_t viewerId, std::int64_t 
                                             int limit) {
     if (limit <= 0 || limit > 100) limit = 20;
     try {
-        const bool isOwner = (viewerId == ownerId);
-        const int  fetchN  = limit + 1;  // 다음 cursor 판정용 +1
+        const bool isOwner   = (viewerId == ownerId);
+        const bool isFriend  = !isOwner && follows_ && viewerId > 0
+                                && follows_->isFollower(viewerId, ownerId);
+        const int  fetchN    = limit + 1;  // 다음 cursor 판정용 +1
 
         std::ostringstream sql;
         sql << "SELECT id, user_id, body, visibility, download_policy, created_at, updated_at "
                "FROM posts WHERE user_id = ? AND deleted_at IS NULL ";
         if (!isOwner) {
-            sql << " AND visibility = 'public' ";
+            sql << (isFriend ? " AND visibility IN ('public','friends') "
+                             : " AND visibility = 'public' ");
         }
         if (cursor) {
             sql << " AND id < ? ";

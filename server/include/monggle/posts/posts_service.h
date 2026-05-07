@@ -1,12 +1,15 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 
 namespace monggle {
+
+class FollowsService;
 
 enum class Visibility { Public, Friends, Private };
 enum class DownloadPolicy { OwnerOnly, Followers, PublicAllowed };
@@ -54,6 +57,8 @@ struct TimelinePage {
 
 class PostsService {
 public:
+    explicit PostsService(std::shared_ptr<FollowsService> follows = nullptr);
+
     Result<Post> create(std::int64_t authorId, const CreatePostRequest& req);
 
     // viewerId == -1 이면 비로그인 (public만 통과)
@@ -73,6 +78,9 @@ public:
     Result<std::vector<Post>> searchOwn(std::int64_t userId,
                                         const std::string& query,
                                         int limit);
+
+private:
+    std::shared_ptr<FollowsService> follows_;
 };
 
 } // namespace monggle
