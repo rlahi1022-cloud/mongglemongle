@@ -9,10 +9,10 @@ import { cn } from "@/lib/utils";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "px-3 py-1.5 rounded-2xl text-sm transition-all whitespace-nowrap",
+    "px-3 py-1.5 rounded-2xl text-sm font-medium transition-all whitespace-nowrap",
     isActive
       ? "bg-primary text-primary-foreground shadow"
-      : "text-primary/85 hover:bg-white/40 hover:text-primary"
+      : "text-foreground/80 hover:bg-primary/10 hover:text-primary"
   );
 
 const mobileNavClass = ({ isActive }: { isActive: boolean }) =>
@@ -36,7 +36,7 @@ export function Layout() {
       <div className="starfield" aria-hidden />
       <div className="starfield-extra" aria-hidden />
 
-      <header className="relative z-20 bg-primary/15 backdrop-blur-2xl border-b border-primary/20 shadow-sm">
+      <header className="relative z-20 bg-white/75 backdrop-blur-2xl border-b border-primary/20 shadow-sm">
         <div className="container flex h-16 items-center gap-3">
           {/* 모바일 햄버거 */}
           <button
