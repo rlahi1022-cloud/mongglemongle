@@ -45,4 +45,5 @@ keys/
 .docker-data/
 
 # Local media storage (dev only — prod will be S3)
-media/
+# Anchor with leading slash so it only matches the repo root, not server/.../media/
+/media/
