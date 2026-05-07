@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { VisibilitySelect } from "@/components/ui/select-visibility";
 import { PostCard } from "@/components/PostCard";
 import { FriendsBox } from "@/components/FriendsBox";
+import { DevlogDraftDialog } from "@/components/DevlogDraftDialog";
 import {
   ApiError,
   posts,
@@ -21,6 +22,8 @@ export function FeedPage() {
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedPostIds, setSelectedPostIds] = useState<number[]>([]);
+  const [devlogOpen, setDevlogOpen] = useState(false);
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -72,6 +75,14 @@ export function FeedPage() {
     } finally { setLoading(false); }
   };
 
+  const selectedPosts = items.filter((item) => selectedPostIds.includes(item.id));
+
+  const toggleSelected = (postId: number) => {
+    setSelectedPostIds((prev) =>
+      prev.includes(postId) ? prev.filter((id) => id !== postId) : [...prev, postId]
+    );
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
       <div className="space-y-5 min-w-0">
@@ -121,6 +132,22 @@ export function FeedPage() {
 
         {error && <div className="cloud-card text-sm text-destructive font-medium px-4 py-2">{error}</div>}
 
+        {items.length > 0 && (
+          <div className="cloud-card flex flex-wrap items-center gap-3 px-4 py-3">
+            <div className="text-sm font-bold">개발일지 선택 {selectedPostIds.length}개</div>
+            <div className="flex-1" />
+            <Button
+              type="button"
+              variant="outline"
+              disabled={selectedPostIds.length === 0}
+              onClick={() => setDevlogOpen(true)}
+              className="rounded-2xl bg-white"
+            >
+              개발일지 작성
+            </Button>
+          </div>
+        )}
+
         {items.length === 0 && !loading && (
           <Card className="cloud-card">
             <CardContent className="py-12 text-center text-muted-foreground">
@@ -139,6 +166,17 @@ export function FeedPage() {
             body={it.body}
             visibility={it.visibility}
             createdAt={it.created_at}
+            rightSlot={
+              <label className="flex h-8 items-center gap-2 rounded-2xl border bg-white/80 px-2 text-xs font-bold">
+                <input
+                  type="checkbox"
+                  checked={selectedPostIds.includes(it.id)}
+                  onChange={() => toggleSelected(it.id)}
+                  className="h-4 w-4 accent-primary"
+                />
+                선택
+              </label>
+            }
           />
         ))}
 
@@ -155,6 +193,13 @@ export function FeedPage() {
       <aside className="space-y-4">
         <FriendsBox />
       </aside>
+
+      {devlogOpen && (
+        <DevlogDraftDialog
+          selectedPosts={selectedPosts}
+          onClose={() => setDevlogOpen(false)}
+        />
+      )}
     </div>
   );
 }
