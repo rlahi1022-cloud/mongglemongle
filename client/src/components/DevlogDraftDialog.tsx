@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
+import { ApiError, posts, type FeedItem, type Visibility } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { VisibilitySelect } from "@/components/ui/select-visibility";
 import { Textarea } from "@/components/ui/textarea";
-import type { FeedItem } from "@/api/client";
 
 interface Props {
   selectedPosts: FeedItem[];
   onClose: () => void;
+  onPublished?: () => void;
 }
 
 type SourceKind = "naver" | "github";
@@ -135,8 +138,15 @@ ${safetySection()}
 `;
 }
 
-export function DevlogDraftDialog({ selectedPosts, onClose }: Props) {
+function titleFromDraft(draft: string) {
+  const firstHeading = draft.split("\n").find((line) => line.startsWith("# "));
+  return firstHeading?.replace(/^#\s+/, "").trim() || "개발일지";
+}
+
+export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props) {
   const [mode, setMode] = useState<DevlogMode>("daily");
+  const [title, setTitle] = useState(selectedPosts[0]?.title?.trim() || "개발일지");
+  const [visibility, setVisibility] = useState<Visibility>("public");
   const [naverRaw, setNaverRaw] = useState("");
   const [githubRaw, setGithubRaw] = useState("");
   const [environmentNotes, setEnvironmentNotes] = useState("");
@@ -147,6 +157,8 @@ export function DevlogDraftDialog({ selectedPosts, onClose }: Props) {
   const [nextSteps, setNextSteps] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [publishing, setPublishing] = useState(false);
+  const [published, setPublished] = useState(false);
 
   const naverLines = useMemo(() => splitLines(naverRaw), [naverRaw]);
   const githubLines = useMemo(() => splitLines(githubRaw), [githubRaw]);
@@ -167,7 +179,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose }: Props) {
       return;
     }
     setError(null);
-    setDraft(mode === "study"
+    const nextDraft = mode === "study"
       ? buildStudyDraft({
         posts: selectedPosts,
         naverLines,
@@ -187,7 +199,28 @@ export function DevlogDraftDialog({ selectedPosts, onClose }: Props) {
         learnings,
         nextSteps,
       })
-    );
+    ;
+    setTitle(titleFromDraft(nextDraft).slice(0, 200));
+    setDraft(nextDraft);
+    setPublished(false);
+  };
+
+  const publishDraft = async () => {
+    if (!draft.trim()) {
+      setError("먼저 초안을 생성하거나 작성해주세요.");
+      return;
+    }
+    setPublishing(true);
+    setError(null);
+    try {
+      await posts.create(title.trim() || titleFromDraft(draft), draft.trim(), visibility);
+      setPublished(true);
+      onPublished?.();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "개발일지 발행 실패");
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
@@ -203,7 +236,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose }: Props) {
           <div>
             <h2 className="text-lg font-bold">개발일지 초안</h2>
             <div className="text-xs text-muted-foreground">
-              {mode === "study" ? "공부형" : "당일 개발 경험"} · 피드 {selectedPosts.length}개 · 네이버 {sourceCounts.naver}개 · GitHub {sourceCounts.github}개
+              {mode === "study" ? "공부형" : "당일 개발 경험"} · {visibility} · 피드 {selectedPosts.length}개 · 네이버 {sourceCounts.naver}개 · GitHub {sourceCounts.github}개
             </div>
           </div>
           <Button type="button" variant="ghost" onClick={onClose} className="rounded-2xl">
@@ -213,6 +246,18 @@ export function DevlogDraftDialog({ selectedPosts, onClose }: Props) {
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-5 lg:grid-cols-2">
           <div className="space-y-4">
+            <section className="space-y-2">
+              <h3 className="text-sm font-bold">발행 설정</h3>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value.slice(0, 200))}
+                maxLength={200}
+                placeholder="개발일지 제목"
+                className="rounded-2xl font-medium"
+              />
+              <VisibilitySelect value={visibility} onChange={setVisibility} />
+            </section>
+
             <section className="space-y-2">
               <h3 className="text-sm font-bold">개발일지 형식</h3>
               <div className="grid grid-cols-2 gap-2">
@@ -322,10 +367,16 @@ export function DevlogDraftDialog({ selectedPosts, onClose }: Props) {
             )}
 
             {error && <div className="rounded-2xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>}
+            {published && <div className="rounded-2xl bg-primary/10 px-3 py-2 text-sm font-medium text-primary">발행 완료</div>}
 
-            <Button type="button" onClick={createDraft} className="w-full rounded-2xl">
-              초안 생성
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" onClick={createDraft} className="rounded-2xl">
+                초안 생성
+              </Button>
+              <Button type="button" variant="outline" onClick={publishDraft} disabled={publishing || !draft.trim()} className="rounded-2xl bg-white">
+                {publishing ? "발행 중..." : "발행"}
+              </Button>
+            </div>
           </div>
 
           <div className="flex min-h-[420px] flex-col space-y-2">

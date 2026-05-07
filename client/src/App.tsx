@@ -10,6 +10,7 @@ import { MyTimelinePage } from "@/pages/MyTimeline";
 import { SnapshotPage } from "@/pages/Snapshot";
 import { SearchPage } from "@/pages/Search";
 import { ProfilePage } from "@/pages/Profile";
+import { DevlogsPage } from "@/pages/Devlogs";
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
                 <Route path="/me/timeline" element={<MyTimelinePage />} />
                 <Route path="/snapshot" element={<SnapshotPage />} />
                 <Route path="/search" element={<SearchPage />} />
+                <Route path="/devlogs" element={<DevlogsPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
               </Route>
             </Route>
