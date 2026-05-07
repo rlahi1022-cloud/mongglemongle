@@ -12,6 +12,7 @@ endif()
 find_package(Drogon  CONFIG REQUIRED)
 find_package(cpp-jwt CONFIG REQUIRED)
 find_package(OpenSSL        REQUIRED)
+find_package(OpenCV         REQUIRED COMPONENTS core imgproc imgcodecs)
 
 # libcrypt (libxcrypt) for bcrypt via crypt_r()
 find_library(CRYPT_LIBRARY NAMES crypt REQUIRED)
@@ -24,6 +25,7 @@ add_executable(mongglemonggle
     server/src/auth/password_service.cpp
     server/src/event/event_bus.cpp
     server/src/follows/follows_service.cpp
+    server/src/media/media_service.cpp
     server/src/posts/posts_service.cpp
     server/src/posts/snapshot_service.cpp
     server/src/router/routes.cpp
@@ -31,6 +33,7 @@ add_executable(mongglemonggle
     server/src/router/posts_routes.cpp
     server/src/router/snapshot_routes.cpp
     server/src/router/follows_routes.cpp
+    server/src/router/media_routes.cpp
 )
 
 target_include_directories(mongglemonggle PRIVATE
@@ -42,5 +45,8 @@ target_link_libraries(mongglemonggle PRIVATE
     cpp-jwt::cpp-jwt
     OpenSSL::Crypto
     OpenSSL::SSL
+    opencv_core
+    opencv_imgproc
+    opencv_imgcodecs
     ${CRYPT_LIBRARY}
 )

@@ -58,6 +58,8 @@ AppConfig AppConfig::loadFromEnv() {
     c.jwtPublicKeyPath  = envOr("MONGGLE_JWT_PUBLIC_KEY_PATH",   "keys/dev_jwt_public.pem");
     c.jwtAccessTtl      = std::chrono::seconds(envOrI64("MONGGLE_JWT_ACCESS_TTL_SECONDS",   900));    // 15m
     c.jwtRefreshTtl     = std::chrono::seconds(envOrI64("MONGGLE_JWT_REFRESH_TTL_SECONDS",  60 * 60 * 24 * 14)); // 14d
+
+    c.mediaStorageRoot  = envOr("MONGGLE_MEDIA_STORAGE_ROOT", "media");
     return c;
 }
 
@@ -69,7 +71,8 @@ void AppConfig::log() const {
              << " (pool=" << redisPoolSize << ")"
              << " jwt_issuer=" << jwtIssuer
              << " jwt_access_ttl=" << jwtAccessTtl.count() << "s"
-             << " jwt_refresh_ttl=" << jwtRefreshTtl.count() << "s";
+             << " jwt_refresh_ttl=" << jwtRefreshTtl.count() << "s"
+             << " media_root=" << mediaStorageRoot;
 }
 
 } // namespace monggle

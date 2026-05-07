@@ -27,6 +27,8 @@ struct AppConfig {
     std::chrono::seconds jwtAccessTtl;
     std::chrono::seconds jwtRefreshTtl;
 
+    std::string mediaStorageRoot;   // 로컬 미디어 저장 루트
+
     static AppConfig loadFromEnv();
     void log() const;
 };

@@ -43,3 +43,6 @@ keys/
 
 # Docker volumes (managed via docker-compose volumes:, but defensive)
 .docker-data/
+
+# Local media storage (dev only — prod will be S3)
+media/
