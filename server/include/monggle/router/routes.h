@@ -1,10 +1,11 @@
 #pragma once
 
+#include <memory>
+
 namespace monggle {
 
-class Router;
 class EntryService;
 
-void configureRoutes(Router& router, EntryService& entryService);
+void configureRoutes(std::shared_ptr<EntryService> entryService);
 
 } // namespace monggle

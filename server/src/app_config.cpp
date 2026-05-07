@@ -1,10 +1,11 @@
 #include "monggle/app_config.h"
-#include <iostream>
+
+#include <trantor/utils/Logger.h>
 
 namespace monggle {
 
 void AppConfig::init() {
-    std::cout << "[AppConfig] init" << std::endl;
+    LOG_INFO << "[AppConfig] init";
     // TODO: load configuration file, environment variables, and secure secrets
 }
 
