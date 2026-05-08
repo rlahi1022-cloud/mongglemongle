@@ -1,6 +1,8 @@
 #include "monggle/media/media_service.h"
 #include "monggle/blocks/blocks_service.h"
 #include "monggle/follows/follows_service.h"
+#include "monggle/media/permissions.h"
+#include "monggle/media/storage.h"
 
 #include <drogon/drogon.h>
 #include <drogon/orm/DbClient.h>
@@ -155,27 +157,19 @@ std::optional<PostMeta> loadPostMeta(std::int64_t postId) {
 
 bool canViewPost(const ViewerContext& vc, const PostMeta& p,
                  FollowsService* follows, BlocksService* blocks) {
-    if (vc.viewerId == p.userId) return true;
-    if (blocks && vc.viewerId > 0 && blocks->isBlocked(vc.viewerId, p.userId)) return false;
-    if (p.visibility == "public")  return true;
-    if (p.visibility == "friends") {
-        return vc.isFollowerOfAuthor ||
-               (follows && vc.viewerId > 0 && follows->isFollower(vc.viewerId, p.userId));
-    }
-    return false; // private
+    bool isFollower = vc.isFollowerOfAuthor ||
+                      (follows && vc.viewerId > 0 && follows->isFollower(vc.viewerId, p.userId));
+    bool isBlocked  = blocks && vc.viewerId > 0 && blocks->isBlocked(vc.viewerId, p.userId);
+    return permissions::canView(vc.viewerId, p.userId, p.visibility, isFollower, isBlocked);
 }
 
 bool canDownload(const ViewerContext& vc, const PostMeta& p,
                  FollowsService* follows, BlocksService* blocks) {
-    if (vc.viewerId == p.userId) return true;
-    if (!canViewPost(vc, p, follows, blocks))    return false;
-    if (p.downloadPolicy == "owner_only")     return false;
-    if (p.downloadPolicy == "followers") {
-        return vc.isFollowerOfAuthor ||
-               (follows && vc.viewerId > 0 && follows->isFollower(vc.viewerId, p.userId));
-    }
-    if (p.downloadPolicy == "public_allowed") return p.visibility == "public";
-    return false;
+    bool isFollower = vc.isFollowerOfAuthor ||
+                      (follows && vc.viewerId > 0 && follows->isFollower(vc.viewerId, p.userId));
+    bool isBlocked  = blocks && vc.viewerId > 0 && blocks->isBlocked(vc.viewerId, p.userId);
+    return permissions::canDownload(vc.viewerId, p.userId, p.visibility, p.downloadPolicy,
+                                    isFollower, isBlocked);
 }
 
 MediaAsset rowToMedia(const drogon::orm::Row& r) {
@@ -200,9 +194,11 @@ MediaAsset rowToMedia(const drogon::orm::Row& r) {
 } // namespace
 
 MediaService::MediaService(std::string storageRoot,
+                           std::shared_ptr<IMediaStorage> storage,
                            std::shared_ptr<FollowsService> follows,
                            std::shared_ptr<BlocksService> blocks)
     : storageRoot_(std::move(storageRoot)),
+      storage_(std::move(storage)),
       follows_(std::move(follows)),
       blocks_(std::move(blocks)) {
     ensureDir(storageRoot_);
@@ -274,6 +270,19 @@ MResult<MediaAsset> MediaService::uploadForPost(std::int64_t authorId,
         std::string relOriginal = rel(original.string());
         std::string relThumb    = rel(thumbAbs);
         std::string relPoster   = rel(posterAbs);
+
+        // Storage 백엔드에 업로드. LocalFs면 root_와 storageRoot_가 같아 no-op,
+        // Minio면 실제 PutObject 발생.
+        if (storage_ && storage_->backendName() != "local-fs") {
+            if (!relOriginal.empty()) storage_->putFile(relOriginal, original.string(), mimeType);
+            if (!relThumb.empty())    storage_->putFile(relThumb,    thumbAbs,           "image/jpeg");
+            if (!relPoster.empty())   storage_->putFile(relPoster,   posterAbs,          "image/png");
+            // 800px 변형도 함께 업로드 (썸네일 외에 list 카드용)
+            std::string thumb800 = (dir / "thumb_800.jpg").string();
+            if (fs::exists(thumb800)) {
+                storage_->putFile(rel(thumb800), thumb800, "image/jpeg");
+            }
+        }
 
         db()->execSqlSync(
             "UPDATE media_assets SET "

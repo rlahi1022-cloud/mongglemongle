@@ -2,6 +2,7 @@
 #include "monggle/auth/auth_service.h"
 #include "monggle/follows/follows_service.h"
 #include "monggle/media/media_service.h"
+#include "monggle/media/storage.h"
 
 #include <drogon/drogon.h>
 #include <json/json.h>
@@ -216,11 +217,7 @@ void configureMediaRoutes(std::shared_ptr<AuthService> authService,
                 return;
             }
             const auto& m = std::get<MediaAsset>(result);
-            auto absPath = (*storageRootPath / m.storeKeyOriginal).string();
-            auto resp = drogon::HttpResponse::newFileResponse(
-                absPath, "", drogon::CT_CUSTOM);
-            resp->setContentTypeString(m.mimeType);
-            cb(resp);
+            cb(mediaService->storage().serve(m.storeKeyOriginal, m.mimeType, "", ""));
         },
         {drogon::Get});
 
@@ -248,12 +245,8 @@ void configureMediaRoutes(std::shared_ptr<AuthService> authService,
                 return;
             }
             const auto& m = std::get<MediaAsset>(result);
-            auto absPath = (*storageRootPath / m.storeKeyOriginal).string();
             auto fname = std::filesystem::path(m.storeKeyOriginal).filename().string();
-            auto resp = drogon::HttpResponse::newFileResponse(
-                absPath, fname, drogon::CT_CUSTOM, "attachment");
-            resp->setContentTypeString(m.mimeType);
-            cb(resp);
+            cb(mediaService->storage().serve(m.storeKeyOriginal, m.mimeType, "attachment", fname));
         },
         {drogon::Get});
 
@@ -286,11 +279,8 @@ void configureMediaRoutes(std::shared_ptr<AuthService> authService,
                                "thumbnail not generated", path));
                 return;
             }
-            auto absPath = (*storageRootPath / rel).string();
-            auto resp = drogon::HttpResponse::newFileResponse(
-                absPath, "", drogon::CT_CUSTOM);
-            resp->setContentTypeString(m.storeKeyThumb.empty() ? "image/png" : "image/jpeg");
-            cb(resp);
+            std::string mime = m.storeKeyThumb.empty() ? "image/png" : "image/jpeg";
+            cb(mediaService->storage().serve(rel, mime, "", ""));
         },
         {drogon::Get});
 }

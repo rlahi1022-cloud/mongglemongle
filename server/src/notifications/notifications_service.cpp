@@ -1,9 +1,11 @@
 #include "monggle/notifications/notifications_service.h"
+#include "monggle/notifications/stream_hub.h"
 
 #include <drogon/drogon.h>
 #include <drogon/orm/DbClient.h>
 #include <drogon/orm/Exception.h>
 
+#include <sstream>
 #include <trantor/utils/Logger.h>
 
 namespace monggle {
@@ -35,7 +37,22 @@ void NotificationsService::enqueue(std::int64_t recipientId,
         }
     } catch (const std::exception& e) {
         LOG_WARN << "[notifications] enqueue failed: " << e.what();
+        return;
     }
+
+    // SSE 스트림으로 즉시 푸시. queue 기반이라 publish는 non-blocking.
+    std::ostringstream js;
+    js << "{\"kind\":\"" << kind << "\",\"body\":\"";
+    for (char c : body) {
+        if (c == '"' || c == '\\') js << '\\';
+        if (c == '\n') js << "\\n";
+        else js << c;
+    }
+    js << "\"";
+    if (actorId)  js << ",\"actor_id\":"  << *actorId;
+    if (targetId) js << ",\"target_id\":" << *targetId;
+    js << "}";
+    NotificationStreamHub::instance().publish(recipientId, js.str());
 }
 
 std::vector<NotificationItem> NotificationsService::recent(std::int64_t userId, int limit) {

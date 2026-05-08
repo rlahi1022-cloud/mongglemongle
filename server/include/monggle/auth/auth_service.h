@@ -1,10 +1,14 @@
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <variant>
+
+namespace sw { namespace redis { class Redis; } }
 
 namespace monggle {
 
@@ -45,8 +49,19 @@ public:
     // Authorization 헤더의 "Bearer ..." 에서 user_id 추출 (실패 시 nullopt)
     std::optional<std::int64_t> verifyAccess(const std::string& bearerHeader) const;
 
+    // Refresh token allowlist를 Redis로 운영. issue/validate/rotate/revoke 모두
+    // Redis fast path를 우선 사용하고, 끊기면 DB fallback. 미설정이면 DB만 사용.
+    void setRedis(std::shared_ptr<sw::redis::Redis> redis);
+    bool redisHealthy() const { return redisHealthy_.load(); }
+
 private:
-    std::shared_ptr<JwtService> jwt_;
+    void rtRedisAllow(const std::string& tokenHash, std::int64_t userId, std::chrono::seconds ttl);
+    void rtRedisRevoke(const std::string& tokenHash);
+    std::optional<std::int64_t> rtRedisLookup(const std::string& tokenHash);
+
+    std::shared_ptr<JwtService>        jwt_;
+    std::shared_ptr<sw::redis::Redis>  redis_;
+    std::atomic<bool>                  redisHealthy_{false};
 };
 
 } // namespace monggle

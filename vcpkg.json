@@ -1,0 +1,11 @@
+{
+  "name": "mongglemonggle",
+  "version-string": "0.1",
+  "description": "Selective vcpkg manifest. Only deps not available cleanly via apt are listed here; system deps (Drogon, OpenCV, OpenSSL, cpp-jwt, libxcrypt) stay on apt to keep CI/Docker simple.",
+  "dependencies": [
+    "redis-plus-plus",
+    "minio-cpp",
+    "openssl",
+    "gtest"
+  ]
+}

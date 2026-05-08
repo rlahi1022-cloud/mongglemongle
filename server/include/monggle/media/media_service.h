@@ -11,6 +11,7 @@ namespace monggle {
 
 class FollowsService;
 class BlocksService;
+class IMediaStorage;
 
 enum class MediaKind { Photo, Video };
 
@@ -48,10 +49,16 @@ struct ViewerContext {
 
 class MediaService {
 public:
-    // 미디어 저장 루트 (./media 또는 환경변수). 없으면 자동 생성.
+    // 미디어 저장 루트 + 백엔드 스토리지.
+    // storage가 LocalFsStorage이고 storageRoot와 root()가 같으면 단일 노드 모드.
+    // storage가 MinioStorage이면 storageRoot는 임시 처리/캐시 디렉토리 역할.
     explicit MediaService(std::string storageRoot,
+                          std::shared_ptr<IMediaStorage> storage,
                           std::shared_ptr<FollowsService> follows = nullptr,
                           std::shared_ptr<BlocksService> blocks = nullptr);
+
+    // 라우터에서 view/download/thumb 응답을 만들 때 사용.
+    IMediaStorage& storage() { return *storage_; }
 
     // multipart upload — 한 번의 요청으로 메타+바이트 모두 전달.
     // postId 기준 권한 검사: postId의 owner == authorId 여야 함.
@@ -73,6 +80,7 @@ public:
 
 private:
     std::string storageRoot_;
+    std::shared_ptr<IMediaStorage> storage_;
     std::shared_ptr<FollowsService> follows_;
     std::shared_ptr<BlocksService> blocks_;
 };

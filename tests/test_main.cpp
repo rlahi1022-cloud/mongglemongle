@@ -1,6 +1,2 @@
-#include <iostream>
-
-int main() {
-    std::cout << "몽글몽글 테스트 스켈레톤" << std::endl;
-    return 0;
-}
+// gtest_main provides main(); this file just exists so CMake has a stable entry source.
+// Test bodies live in test_*.cpp.

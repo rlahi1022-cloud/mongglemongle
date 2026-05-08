@@ -8,18 +8,18 @@ import { cn } from "@/lib/utils";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "px-3 py-1.5 rounded-2xl text-sm font-bold transition-all whitespace-nowrap",
+    "px-3 py-1.5 rounded-md text-[13px] font-medium tracking-tight transition-colors whitespace-nowrap",
     isActive
-      ? "bg-white text-primary shadow"
-      : "text-white hover:bg-white/15"
+      ? "bg-white text-primary"
+      : "text-white/85 hover:text-white hover:bg-white/10"
   );
 
 const mobileNavClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "block px-4 py-2.5 rounded-2xl text-sm font-bold transition-all",
+    "block px-4 py-2 rounded-md text-sm font-medium transition-colors",
     isActive
       ? "bg-white text-primary"
-      : "text-white hover:bg-white/15"
+      : "text-white/85 hover:text-white hover:bg-white/10"
   );
 
 export function Layout() {
@@ -58,13 +58,13 @@ export function Layout() {
             <span className="text-lg font-bold tracking-tight hidden sm:inline text-white">몽글몽글</span>
           </Link>
 
-          {/* 데스크톱 메뉴 */}
-          <nav className="hidden md:flex items-center gap-1 ml-2">
-            <NavLink to="/feed" className={navClass}>☁️ 피드</NavLink>
-            <NavLink to="/me/timeline" className={navClass}>📓 내 글</NavLink>
-            <NavLink to="/snapshot" className={navClass}>⏳ 시점 복원</NavLink>
-            <NavLink to="/search" className={navClass}>🔍 검색</NavLink>
-            <NavLink to="/devlogs" className={navClass}>📝 개발일지</NavLink>
+          {/* 데스크톱 메뉴 — 카페 게시판 양식: 이모지 없이 정돈된 텍스트 nav */}
+          <nav className="hidden md:flex items-center gap-0.5 ml-3 border-l border-white/15 pl-3">
+            <NavLink to="/feed" className={navClass}>피드</NavLink>
+            <NavLink to="/me/timeline" className={navClass}>내 글</NavLink>
+            <NavLink to="/snapshot" className={navClass}>시점 복원</NavLink>
+            <NavLink to="/search" className={navClass}>검색</NavLink>
+            <NavLink to="/devlogs" className={navClass}>개발일지</NavLink>
           </nav>
 
           <div className="flex-1" />
@@ -136,12 +136,12 @@ export function Layout() {
         {menuOpen && (
           <div className="md:hidden border-t border-white/15 bg-[hsl(228_55%_22%)]/95 backdrop-blur">
             <div className="container py-3 space-y-1">
-              <NavLink to="/feed" className={mobileNavClass} onClick={() => setMenuOpen(false)}>☁️ 피드</NavLink>
-              <NavLink to="/me/timeline" className={mobileNavClass} onClick={() => setMenuOpen(false)}>📓 내 글</NavLink>
-              <NavLink to="/snapshot" className={mobileNavClass} onClick={() => setMenuOpen(false)}>⏳ 시점 복원</NavLink>
-              <NavLink to="/search" className={mobileNavClass} onClick={() => setMenuOpen(false)}>🔍 검색</NavLink>
-              <NavLink to="/devlogs" className={mobileNavClass} onClick={() => setMenuOpen(false)}>📝 개발일지</NavLink>
-              <NavLink to="/profile" className={mobileNavClass} onClick={() => setMenuOpen(false)}>👤 프로필</NavLink>
+              <NavLink to="/feed" className={mobileNavClass} onClick={() => setMenuOpen(false)}>피드</NavLink>
+              <NavLink to="/me/timeline" className={mobileNavClass} onClick={() => setMenuOpen(false)}>내 글</NavLink>
+              <NavLink to="/snapshot" className={mobileNavClass} onClick={() => setMenuOpen(false)}>시점 복원</NavLink>
+              <NavLink to="/search" className={mobileNavClass} onClick={() => setMenuOpen(false)}>검색</NavLink>
+              <NavLink to="/devlogs" className={mobileNavClass} onClick={() => setMenuOpen(false)}>개발일지</NavLink>
+              <NavLink to="/profile" className={mobileNavClass} onClick={() => setMenuOpen(false)}>프로필</NavLink>
               <button
                 onClick={async () => { setMenuOpen(false); await logout(); nav("/login"); }}
                 className="block w-full text-left px-4 py-2.5 rounded-2xl text-sm font-bold text-white/90 hover:bg-white/15"

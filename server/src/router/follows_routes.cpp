@@ -1,6 +1,6 @@
 #include "monggle/router/routes.h"
 #include "monggle/auth/auth_service.h"
-#include "monggle/cache/ttl_cache.h"
+#include "monggle/cache/layered_cache.h"
 #include "monggle/event/event_bus.h"
 #include "monggle/follows/follows_service.h"
 #include "monggle/notifications/notifications_service.h"
@@ -188,7 +188,7 @@ void configureFollowsRoutes(std::shared_ptr<AuthService> authService,
 
             std::string cacheKey = "feed:" + std::to_string(*userId) + ":"
                                    + std::to_string(cursor) + ":" + std::to_string(limit);
-            auto& cache = TtlCache::feedCache();
+            auto& cache = LayeredCache::feed();
             if (auto cached = cache.get(cacheKey)) {
                 auto resp = drogon::HttpResponse::newHttpResponse();
                 resp->setBody(std::move(*cached));

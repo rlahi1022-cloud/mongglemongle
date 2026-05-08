@@ -1,50 +1,124 @@
 # 몽글몽글 (Monggle Monggle)
 
 <p align="center">
-  <img src="doc/마스코트.png" alt="몽글몽글 마스코트" width="180" />
+  <img src="docs/마스코트.png" alt="몽글몽글 마스코트" width="180" />
 </p>
 
 <p align="center">
   <em>지나간 기록을 꺼내 오늘의 글로 잇는 시스템</em>
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/backend-C++17-blue?style=flat-square" />
-  <img src="https://img.shields.io/badge/http-Drogon%201.8-orange?style=flat-square" />
-  <img src="https://img.shields.io/badge/db-MariaDB%2011-003545?style=flat-square" />
-  <img src="https://img.shields.io/badge/frontend-React%20%2B%20Vite-61dafb?style=flat-square" />
-  <img src="https://img.shields.io/badge/style-Tailwind%20%2B%20shadcn-38bdf8?style=flat-square" />
-</p>
+---
+
+## 무엇을 만들었나
+
+매일 무언가를 만드는 사람(개발자/디자이너/학습자)이 자기 글·사진·영상을 **시점과 함께** 저장해 두고, 임의의 과거 시점으로 돌아가 다시 꺼내 볼 수 있게 하는 커뮤니티 플랫폼입니다.
+
+핵심 어필 축 3가지:
+- **시점 복원** — 이벤트 소싱 + 스냅샷으로 임의 시점의 사용자 상태를 재구성.
+- **자원 설계** — 다층 캐시, in-process pub/sub, 백프레셔 워터마크를 명시적으로 설계.
+- **트래픽 처리** — 다중 사용자의 팬아웃·캐시 다층·미디어 다운로드 부하를 다룸.
+
+→ 자세한 설계: [docs/몽글몽글_기획.pdf](docs/몽글몽글_기획.pdf)
+→ 어떻게 코드로 옮겼는지: [docs/DEVLOG.md](docs/DEVLOG.md)
+→ 네이버 카페 원문 수집 도구: [docs/네이버카페_원문추출기_구현정리.md](docs/네이버카페_원문추출기_구현정리.md)
 
 ---
 
-## 무엇을 만들고 있나
+## 구현된 기능
 
-매일 무언가를 만드는 사람(개발자/디자이너/학습자)이 자기 글·사진·영상을 **시점과 함께** 저장해 두고, 나중에 임의 시점으로 돌아가 다시 꺼내 볼 수 있게 하는 시스템.
+### 인증 & 보안
+- **JWT RS256** access(15m) + refresh(14d) 페어, refresh 회전 시 기존 hash 폐기
+- **bcrypt** 해싱 (libxcrypt `crypt_gensalt_rn` / `crypt_r`, $2b$ 저장)
+- **Rate limiting**: 로그인 5/min/IP, 글 작성 10/min/user, 검색 30/min/user
+- **CORS preflight** (PUT 포함, 아바타 업로드 호환)
+- 비밀번호 변경 전 사전 확인 게이트 (`/me/verify-password`)
 
-핵심 어필 축 3가지 (기획 1.3):
-- **시점 복원** — 이벤트 소싱 + 주기적 스냅샷으로 임의 시점 사용자 상태를 재구성.
-- **자원 설계** — 버퍼·큐·메모리 워터마크·백프레셔를 명시적으로 설계.
-- **트래픽 처리** — 다중 사용자 환경의 팬아웃·캐시 다층·미디어 다운로드 부하를 다룸.
+### 글 & 이벤트 소싱
+- `posts`(현재 상태) + `post_events`(변화의 진실) 이원 구조 — 모든 변화는 이벤트로 적재
+- 이벤트 타입: `created`, `edited`, `visibility_changed`, `deleted`, `media_added`, `restored`
+- 트랜잭션으로 `posts` UPDATE와 `post_events` INSERT 원자성 보장
+- **Soft delete** (`deleted_at` NULL 필터) — 하드 삭제 금지, 이력 보존
+- 카테고리: `feed` / `devlog` 분리 (타임라인/조회 시 필터링)
 
-→ 자세한 설계: [doc/몽글몽글_기획.pdf](doc/몽글몽글_기획.pdf) (40p)
-→ 어떻게 코드로 옮겼는지: [docs/DEVLOG.md](docs/DEVLOG.md)
-→ 네이버 카페 원문 수집 도구 구현 메모: [docs/네이버카페_원문추출기_구현정리.md](docs/네이버카페_원문추출기_구현정리.md)
+### 시점 복원 (Snapshot)
+- `/me/snapshot?at=ISO8601` — 임의 시점의 사용자 글 상태 재구성
+- target_time 이전 가장 가까운 스냅샷 로드 → 이후 `post_events` 순차 재생 → 최종 상태 계산
+- 삭제된 글을 그 시점 기준으로 살리는 "복원" 액션 제공 (restored 이벤트 적재)
+
+### 검색
+- `/me/search?q=...` LIKE 키워드 검색
+- AI Hub가 살아있으면 임베딩 유사도 결과를 키워드 결과와 혼합
+
+### 친구 / 팔로우 / 피드
+- 단방향 follow (`/users/{id}/follow` POST/DELETE)
+- 팔로워/팔로잉 목록 (`/me/followers`, `/me/following`)
+- **Pull 기반 피드** — 작성 시 fanout 없음, 읽을 때 SQL JOIN으로 본인 + 팔로우의 (public|friends) 글 합치기
+- **2계층 캐시 (L1 in-process + L2 Redis)** — 아래 [캐시 계층](#캐시-계층) 참조
+
+### 미디어
+- multipart 업로드 (`/posts/{id}/media`)
+- 이미지: OpenCV로 200/800 너비 비율 유지 JPEG, 썸네일 자동 생성
+- 영상: ffmpeg로 첫 프레임 PNG poster 생성 (원본은 인코딩 없이 보관)
+- **다운로드 정책 매트릭스**: `owner_only` / `followers` / `public_allowed` — visibility와 분리해서 운영
+
+### 댓글 / 알림 / 차단
+- 댓글: `GET/POST /posts/{id}/comments`, `DELETE /comments/{id}` (본인 댓글만)
+- 알림: 댓글/팔로우 시 자동 생성, 미읽음 카운트, 전체 읽음 처리
+- 차단: 차단된 사용자의 글/팔로우/댓글 제외, 본인 또는 차단된 사용자만 해제
+
+### 프로필
+- 아바타 업로드 → OpenCV로 정사각형 256×256 JPEG 변환 (`PUT /me/avatar`)
+- 표시 이름 변경 즉시 반영 (모든 카드/사이드바에 동기화)
+- 비밀번호 변경 (사전 확인 게이트 통과 시)
+- 공개 아바타 조회 (`GET /users/{id}/avatar`, 없으면 404 → 프론트는 첫 글자 fallback)
+
+### 개발일지 (DevLog)
+- 피드 글을 **근거**로 선택해 개발일지 초안 생성
+- 네이버 카페 원문 추출기가 만든 Markdown 파일 다중 import → 근거 변환
+- GitHub 커밋 import (`owner/repo` 또는 URL + 날짜 범위)
+- 형식 선택: **공부형** (개념/배운 점/새롭게 느낀 점) 또는 **당일 개발 경험**
+- 공부형은 입력된 개념에서 기술 용어를 추출, 정의 근거 부족 항목은 추가 확인 대상으로 표시
+- 개발일지는 일반 피드보다 긴 본문 허용, 발행 시 공개 범위 직접 선택
+
+### 캐시 계층
+- **L1**: in-process `TtlCache` — `unordered_map` + `std::mutex`, 30s TTL
+- **L2**: Redis (`redis-plus-plus`, vcpkg manifest로 관리) — `SET ... EX`로 TTL 적재, prefix invalidate는 `SCAN` + `UNLINK`
+- 글 작성/수정/삭제 시 `feed:{userId}:` 접두로 작성자 본인 + 팔로워의 피드를 일괄 무효화
+- **Graceful degradation**: Redis 다운 → L2가 자동으로 `healthy=false`로 떨어지고 L1 단독 모드 지속, `/readyz`의 `redis` 필드가 `down`으로 노출되지만 서비스는 끊기지 않음
+
+### EventBus
+- in-process pub/sub — 동기 디스패치, subscriber 예외 격리
+- 토픽: `kPostCreated`, `kPostEdited`, `kPostDeleted`, `kMediaUploaded`, `kFollowAdded`, `kCommentAdded`
+- 워터마크(published 누적 수) 노출
+
+### AI 허브
+- Python FastAPI 서비스로 분리 (`ai-hub/app.py`)
+- 글 본문 임베딩 → `embeddings` 테이블 적재
+- 검색 시 LIKE 결과와 임베딩 유사도 결과 혼합
+- 모델 로드 실패 시 stub 임베딩 fallback (서비스 중단 X)
+
+### 운영
+- `/healthz` — 프로세스 헬스
+- `/readyz` — DB + Redis ping (Redis 끊겨도 L1으로 동작 보장)
+- 모든 응답에 액세스 로그 한 줄 (`monggle-access.log`)
 
 ---
 
 ## 기술 스택
 
-| 레이어 | 선택 | 비고 |
-|---|---|---|
-| **백엔드** | C++17, Drogon 1.8 | apt `libdrogon-dev` |
-| **인증** | JWT RS256 (cpp-jwt) + bcrypt (libxcrypt) | 토큰 회전, refresh hash 저장 |
-| **DB** | MariaDB 11 | Drogon ORM execSqlSync + 트랜잭션 |
-| **미디어** | OpenCV 4.6 (썸네일) + ffmpeg (영상 첫프레임) | MVP는 로컬 파일시스템 |
-| **클라이언트** | React 18 + Vite 5 + Tailwind 3 + shadcn/ui (TS) | |
-| **로컬 인프라** | Docker Compose (MariaDB + Redis + MinIO + AI Hub) | 백엔드는 아직 DB 중심 |
-| **운영 인프라(예정)** | AWS RDS + ElastiCache + S3 + CloudFront | Terraform 스켈레톤 |
-| **AI 허브** | Python FastAPI + sentence-transformers | BGE-m3 임베딩, 실패 시 stub fallback |
+| 레이어 | 선택 |
+|---|---|
+| 백엔드 | C++, Drogon |
+| 인증 | JWT RS256 (cpp-jwt), bcrypt (libxcrypt) |
+| DB | MariaDB (Drogon ORM, 트랜잭션) |
+| 캐시 | L1 in-process TTL + L2 Redis (redis-plus-plus, vcpkg) |
+| 미디어 | OpenCV (이미지 리사이즈/썸네일) + ffmpeg (영상 첫 프레임) |
+| 클라이언트 | React + Vite + TypeScript + Tailwind + shadcn/ui |
+| 로컬 인프라 | Docker Compose (MariaDB + Redis + MinIO + AI Hub) |
+| 운영 인프라 | AWS RDS + ElastiCache + S3 + CloudFront (Terraform) |
+| AI 허브 | Python FastAPI + sentence-transformers (BGE-m3) |
+| 의존성 관리 | apt (시스템 라이브러리) + vcpkg manifest (redis-plus-plus) |
 
 ---
 
@@ -52,13 +126,13 @@
 
 ```
 .
-├── doc/                  ← 기획서 PDF, 마스코트, 다이어그램
-├── docs/
-│   └── DEVLOG.md         ← 개발 일지
-├── docker-compose.yml    ← MariaDB, Redis, MinIO, AI Hub 로컬 인프라
+├── docs/                 ← 기획서 PDF, 마스코트, 시스템 다이어그램, DEVLOG, 네이버카페 추출기 메모
+├── docker-compose.yml    ← MariaDB, Redis, MinIO, AI Hub
+├── vcpkg.json            ← redis-plus-plus manifest
 ├── server/               ← C++ 백엔드
 │   ├── include/monggle/
 │   │   ├── auth/         JwtService, PasswordService, AuthService
+│   │   ├── cache/        ICache, TtlCache(L1), RedisCache(L2), LayeredCache
 │   │   ├── follows/      FollowsService
 │   │   ├── blocks/       BlocksService
 │   │   ├── comments/     CommentsService
@@ -67,30 +141,33 @@
 │   │   ├── middleware/   cors, rate_limiter, request_log
 │   │   ├── posts/        PostsService, SnapshotService
 │   │   ├── profile/      ProfileService (아바타)
+│   │   ├── event/        EventBus
 │   │   └── router/       routes.h
 │   ├── src/              위 헤더의 구현
 │   └── sql/              초기 스키마 + 마이그레이션
+├── ai-hub/               ← Python FastAPI 임베딩 서비스
 ├── client/               ← React 프론트엔드
-│   ├── public/mascot.png
 │   └── src/
-│       ├── api/          백엔드 fetch 래퍼 (auth 자동, refresh 회전)
+│       ├── api/          백엔드 fetch 래퍼 (auth 자동, 401 refresh 회전)
 │       ├── auth/         AuthContext, ProtectedRoute
-│       ├── components/   Layout(사이드바), PostCard, ui/*
+│       ├── components/   Layout, PostCard, EditPostDialog, DevlogDraftDialog, FriendsBox, ...
 │       └── pages/        Login, Signup, Feed, MyTimeline, Snapshot, Search, Devlogs, Profile
+├── infra/terraform/      ← AWS RDS/ElastiCache/S3/CloudFront 모듈
+├── tests/                ← C++ 테스트 스켈레톤
 ├── scripts/gen_dev_jwt_keys.sh
 └── CMakeLists.txt
 ```
 
 ---
 
-## 화면 미리보기
+## 화면
 
 | 영역 | 설명 |
 |---|---|
-| 좌측 사이드바 (흰색) | 마스코트 + 메뉴(피드/내 글/시점 복원/검색) + 친구 박스 + 프로필(아바타 클릭으로 업로드) |
-| 본문 (저녁하늘 그라데이션 + 별) | 흰 구름 카드들이 떠 있는 형태. 글, 미디어 미리보기, 시점 복원 슬라이더 등 |
+| 좌측 사이드바 (흰색) | 마스코트 + 메뉴(피드/내 글/시점 복원/검색/개발일지) + 친구 박스 + 프로필(아바타 클릭으로 업로드) |
+| 본문 (저녁하늘 그라데이션 + 별) | 흰 구름 카드들이 떠 있는 형태 — 글, 미디어 미리보기, 시점 복원 슬라이더 |
 | 로그인/회원가입 | 마스코트가 떠다니는(`animate-float`) 풀스크린 별밤 |
-| 개발일지 메뉴 | 피드 글을 근거로 선택하고 네이버 글/GitHub 기록/개발 환경 메모를 더해 공부형/당일 개발 경험 초안 생성·발행 |
+| 개발일지 | 피드 글을 근거로 선택, 네이버 글/GitHub 기록/개발 환경 메모를 더해 공부형 또는 당일 개발 경험 초안을 생성하고 발행 |
 
 ---
 
@@ -103,7 +180,7 @@ sudo apt-get install -y \
   libdrogon-dev libjsoncpp-dev uuid-dev libcpp-jwt-dev \
   libssl-dev zlib1g-dev libbrotli-dev libhiredis-dev \
   libpq-dev libmariadb-dev libsqlite3-dev libyaml-cpp-dev \
-  libopencv-dev ffmpeg \
+  libopencv-dev ffmpeg curl \
   docker.io docker-compose-v2
 sudo usermod -aG docker $USER  # 로그아웃/재로그인 필요
 ```
@@ -111,23 +188,31 @@ sudo usermod -aG docker $USER  # 로그아웃/재로그인 필요
 > 호스트에 mariadb-server가 깔려 있으면 3306 충돌 →
 > `sudo systemctl stop mariadb && sudo systemctl disable mariadb`
 
-### 2. JWT 개발 키 생성 (한 번만)
+### 2. vcpkg (redis-plus-plus용, 한 번만)
+
+```bash
+git clone --depth 1 https://github.com/microsoft/vcpkg.git ~/vcpkg
+~/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+# CMakeLists가 ~/vcpkg 또는 $VCPKG_ROOT를 자동 감지함.
+```
+
+### 3. JWT 개발 키 (한 번만)
 
 ```bash
 ./scripts/gen_dev_jwt_keys.sh
 # keys/dev_jwt_{private,public}.pem 생성. .gitignore 처리됨.
 ```
 
-### 3. 인프라 기동
+### 4. 인프라 기동
 
 ```bash
 docker compose up -d
-docker compose ps           # mariadb/redis/minio/ai-hub 상태 확인
+docker compose ps           # mariadb / redis / minio / ai-hub
 ```
 
 첫 기동 시 `server/sql/00*.sql`이 자동 실행되어 인증, 글, 미디어, 댓글, 알림, 차단 관련 테이블이 생성됩니다.
 
-### 4. 백엔드 빌드 & 실행
+### 5. 백엔드 빌드 & 실행
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -135,7 +220,9 @@ cmake --build build -j$(nproc)
 ./build/mongglemonggle    # → 0.0.0.0:8080
 ```
 
-### 5. 프론트엔드 (별도 터미널, Node 18+)
+첫 빌드는 vcpkg가 redis-plus-plus를 가져오느라 5–10분 더 걸릴 수 있습니다. 이후 빌드는 incremental.
+
+### 6. 프론트엔드 (별도 터미널)
 
 ```bash
 cd client
@@ -145,13 +232,9 @@ npm run dev               # → http://127.0.0.1:5173
 
 브라우저에서 `http://127.0.0.1:5173` 접속 → 회원가입 → 로그인 → 글 작성 → 시점 복원 → 사진 첨부 → 친구 팔로우 → 피드.
 
-`개발일지` 메뉴에서 피드 글을 근거로 선택한 뒤 `개발일지 작성`을 누르면 사용자가 입력한 네이버 글 근거, GitHub 기록, 실제 개발 환경/작업감 메모를 바탕으로 개발일지 초안을 만들 수 있습니다. 네이버 카페 원문 추출기가 저장한 `.md` 파일은 여러 개 업로드해 근거로 변환할 수 있고, GitHub는 `owner/repo` 또는 GitHub URL과 날짜 범위를 입력해 최근 커밋을 불러올 수 있습니다. 형식은 `공부형`과 `당일 개발 경험` 중 선택하며, 공부형은 개념/배운 점/새롭게 느낀 점을 중심으로 구성합니다. 공부형 초안은 입력된 개념과 배운 점에서 기술 용어를 추출해 아는 개념은 짧은 정의를 자연스럽게 보강하고, 정의 근거가 부족한 항목은 추가 확인 대상으로 남깁니다. 개발 환경 메모는 짧아도 되지만 의미가 확인되는 문장이어야 하며, 발행 시 피드 글처럼 `전체 공개` / `친구만` / `나만` 공개 범위를 직접 선택합니다. 개발일지는 일반 피드보다 긴 본문을 허용하고, 초안 생성기는 입력된 근거가 없는 성과나 작업을 단정하지 않도록 "과장 방지 체크" 섹션을 함께 생성합니다.
-
-AI Hub가 실행 중이면 글 작성/수정 시 본문 임베딩을 `embeddings` 테이블에 저장하고, 검색 화면에서는 LIKE 키워드 결과에 임베딩 유사도 결과를 함께 섞습니다. 기본 모델은 `BAAI/bge-m3`이며, 모델 로드가 실패하면 AI Hub 내부에서 64차원 stub 임베딩으로 fallback합니다.
-
 ---
 
-## API 한눈에 (총 25개 엔드포인트)
+## API 한눈에
 
 ### 인증
 | Method | Path | 설명 |
@@ -167,9 +250,9 @@ AI Hub가 실행 중이면 글 작성/수정 시 본문 임베딩을 `embeddings
 |---|---|---|
 | POST | `/posts` | 글 작성 (10/min/user, 본문 ≤1000자) |
 | GET / PATCH / DELETE | `/posts/{id}` | 단건 조회 / 수정 / soft delete |
-| GET | `/me/timeline` | 본인 글 시간역순 |
+| GET | `/me/timeline` | 본인 글 시간역순 (`category` 필터 지원) |
 | GET | `/users/{id}/timeline` | 타인 글 (visibility/follows 필터) |
-| GET | `/me/search?q=` | LIKE 키워드 검색 (30/min/user) |
+| GET | `/me/search?q=` | LIKE + 임베딩 혼합 검색 (30/min/user) |
 | GET | `/me/snapshot?at=ISO8601` | **임의 시점 상태 복원** |
 
 ### 친구 / 피드
@@ -177,7 +260,7 @@ AI Hub가 실행 중이면 글 작성/수정 시 본문 임베딩을 `embeddings
 |---|---|---|
 | POST / DELETE | `/users/{id}/follow` | 팔로우 / 언팔로우 |
 | GET | `/me/followers` `/me/following` | 본인 관계 목록 |
-| GET | `/me/feed` | 본인 + 팔로우의 글 (Pull) |
+| GET | `/me/feed` | 본인 + 팔로우의 글 (Pull, L1+L2 캐시) |
 
 ### 미디어
 | Method | Path | 설명 |
@@ -191,7 +274,7 @@ AI Hub가 실행 중이면 글 작성/수정 시 본문 임베딩을 `embeddings
 ### 프로필
 | Method | Path | 설명 |
 |---|---|---|
-| PUT | `/me/avatar` | multipart 업로드 → OpenCV 정사각형 256x256 jpg |
+| PUT | `/me/avatar` | multipart 업로드 → OpenCV 정사각형 256×256 jpg |
 | PATCH | `/me` | 표시 이름 변경 |
 | PATCH | `/me/password` | 비밀번호 변경 |
 | POST | `/me/verify-password` | 프로필 수정 전 비밀번호 확인 |
@@ -211,21 +294,8 @@ AI Hub가 실행 중이면 글 작성/수정 시 본문 임베딩을 `embeddings
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/healthz` | 프로세스 헬스 |
-| GET | `/readyz` | DB ping (Redis는 후속) |
+| GET | `/readyz` | DB + Redis ping (Redis 끊겨도 L1으로 동작) |
 | OPTIONS | `*` | CORS preflight (Vite/Next dev 허용) |
-
----
-
-## 현재 보류한 것
-
-| 항목 | 상태 |
-|---|---|
-| S3/MinIO 직접 업로드 + 서명 URL | Compose에는 MinIO가 있으나 백엔드는 로컬 FS 사용 |
-| Redis L2 캐시 + Push fanout | Drogon RedisClient 이슈로 readyz Redis ping도 보류 |
-| AI 임베딩 검색 | BGE-m3 연결 및 검색 혼합 MVP 구현. 벡터 전용 DB/인덱스는 후속 |
-| 네이버/GitHub 자동 수집 | 네이버는 추출된 Markdown 파일 import, GitHub는 공개 커밋 import 지원. 비공개 repo/API 토큰 연동은 후속 |
-| 스냅샷 워커 | 시점 복원은 현재 이벤트를 처음부터 재생 |
-| 부하 테스트 / 운영 배포 | Terraform 스켈레톤만 있음 |
 
 ---
 
@@ -237,6 +307,8 @@ AI Hub가 실행 중이면 글 작성/수정 시 본문 임베딩을 `embeddings
 | `MONGGLE_DB_HOST` / `_PORT` | `127.0.0.1` / `3306` |
 | `MONGGLE_DB_NAME` / `_USER` / `_PASSWORD` | `monggle` / `monggle` / `monggle_dev` |
 | `MONGGLE_DB_POOL_SIZE` | `8` |
+| `MONGGLE_REDIS_HOST` / `_PORT` | `127.0.0.1` / `6379` |
+| `MONGGLE_REDIS_POOL_SIZE` | `4` |
 | `MONGGLE_JWT_ISSUER` | `monggle.local` |
 | `MONGGLE_JWT_PRIVATE_KEY_PATH` | `keys/dev_jwt_private.pem` |
 | `MONGGLE_JWT_PUBLIC_KEY_PATH` | `keys/dev_jwt_public.pem` |
@@ -252,4 +324,4 @@ AI Hub가 실행 중이면 글 작성/수정 시 본문 임베딩을 `embeddings
 
 ## License
 
-(미정 — 학습/포트폴리오 목적의 비공개 작업)
+학습/포트폴리오 목적의 비공개 작업.

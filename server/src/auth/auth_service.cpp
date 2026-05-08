@@ -5,8 +5,10 @@
 #include <drogon/drogon.h>
 #include <drogon/orm/DbClient.h>
 #include <drogon/orm/Exception.h>
+#include <sw/redis++/redis++.h>
 
 #include <chrono>
+#include <iostream>
 
 namespace monggle {
 
@@ -35,6 +37,57 @@ std::string toMysqlDateTime(std::int64_t epochSeconds) {
 
 AuthService::AuthService(std::shared_ptr<JwtService> jwt) : jwt_(std::move(jwt)) {}
 
+void AuthService::setRedis(std::shared_ptr<sw::redis::Redis> redis) {
+    if (!redis) {
+        redis_.reset();
+        redisHealthy_.store(false);
+        return;
+    }
+    try {
+        redis->ping();
+        redis_ = std::move(redis);
+        redisHealthy_.store(true);
+    } catch (const std::exception& e) {
+        std::cerr << "[auth] redis ping failed: " << e.what()
+                  << " — refresh tokens will use DB-only" << std::endl;
+        redisHealthy_.store(false);
+    }
+}
+
+void AuthService::rtRedisAllow(const std::string& tokenHash, std::int64_t userId,
+                               std::chrono::seconds ttl) {
+    if (!redisHealthy_.load() || !redis_) return;
+    try {
+        redis_->set("rt:" + tokenHash, std::to_string(userId), ttl);
+    } catch (const std::exception& e) {
+        std::cerr << "[auth] redis allow error: " << e.what() << std::endl;
+        redisHealthy_.store(false);
+    }
+}
+
+void AuthService::rtRedisRevoke(const std::string& tokenHash) {
+    if (!redisHealthy_.load() || !redis_) return;
+    try {
+        redis_->del("rt:" + tokenHash);
+    } catch (const std::exception& e) {
+        std::cerr << "[auth] redis revoke error: " << e.what() << std::endl;
+        redisHealthy_.store(false);
+    }
+}
+
+std::optional<std::int64_t> AuthService::rtRedisLookup(const std::string& tokenHash) {
+    if (!redisHealthy_.load() || !redis_) return std::nullopt;
+    try {
+        auto v = redis_->get("rt:" + tokenHash);
+        if (!v) return std::nullopt;
+        return std::stoll(*v);
+    } catch (const std::exception& e) {
+        std::cerr << "[auth] redis lookup error: " << e.what() << std::endl;
+        redisHealthy_.store(false);
+        return std::nullopt;
+    }
+}
+
 AuthResult AuthService::signup(const std::string& email,
                                const std::string& password,
                                const std::string& displayName) {
@@ -61,11 +114,13 @@ AuthResult AuthService::signup(const std::string& email,
         pair.accessExpiresAt  = nowEpoch() + jwt_->accessTtl().count();
         pair.refreshExpiresAt = nowEpoch() + jwt_->refreshTtl().count();
 
+        auto rtHash = sha256Hex(pair.refreshToken);
         db()->execSqlSync(
             "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
             userId,
-            sha256Hex(pair.refreshToken),
+            rtHash,
             toMysqlDateTime(pair.refreshExpiresAt));
+        rtRedisAllow(rtHash, userId, jwt_->refreshTtl());
 
         return pair;
     } catch (const drogon::orm::DrogonDbException& e) {
@@ -97,11 +152,13 @@ AuthResult AuthService::login(const std::string& email, const std::string& passw
         pair.accessExpiresAt  = nowEpoch() + jwt_->accessTtl().count();
         pair.refreshExpiresAt = nowEpoch() + jwt_->refreshTtl().count();
 
+        auto rtHash = sha256Hex(pair.refreshToken);
         db()->execSqlSync(
             "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
             userId,
-            sha256Hex(pair.refreshToken),
+            rtHash,
             toMysqlDateTime(pair.refreshExpiresAt));
+        rtRedisAllow(rtHash, userId, jwt_->refreshTtl());
 
         return pair;
     } catch (const drogon::orm::DrogonDbException& e) {
@@ -118,18 +175,32 @@ AuthResult AuthService::refresh(const std::string& refreshToken) {
     }
     try {
         auto hash = sha256Hex(refreshToken);
-        auto rows = db()->execSqlSync(
-            "SELECT id, user_id FROM refresh_tokens "
-            "WHERE token_hash = ? AND revoked = 0 AND expires_at > NOW(3) LIMIT 1",
-            hash);
-        if (rows.size() == 0) {
-            return AuthError{AuthError::InvalidRefresh, "refresh token not found or expired"};
-        }
-        auto rtId   = rows[0]["id"].as<std::int64_t>();
-        auto userId = rows[0]["user_id"].as<std::int64_t>();
 
-        // 회전: 기존 토큰 폐기, 새 페어 발급
-        db()->execSqlSync("UPDATE refresh_tokens SET revoked = 1 WHERE id = ?", rtId);
+        // Fast path: Redis allowlist에 hash가 있으면 user_id를 즉시 얻음.
+        // Redis 다운/미존재 시 DB로 fallback.
+        std::int64_t userId = -1;
+        std::int64_t rtRowId = -1;
+        if (auto cached = rtRedisLookup(hash)) {
+            userId = *cached;
+        } else {
+            auto rows = db()->execSqlSync(
+                "SELECT id, user_id FROM refresh_tokens "
+                "WHERE token_hash = ? AND revoked = 0 AND expires_at > NOW(3) LIMIT 1",
+                hash);
+            if (rows.size() == 0) {
+                return AuthError{AuthError::InvalidRefresh, "refresh token not found or expired"};
+            }
+            rtRowId = rows[0]["id"].as<std::int64_t>();
+            userId  = rows[0]["user_id"].as<std::int64_t>();
+        }
+
+        // 회전: 기존 토큰 폐기 (DB + Redis), 새 페어 발급
+        if (rtRowId > 0) {
+            db()->execSqlSync("UPDATE refresh_tokens SET revoked = 1 WHERE id = ?", rtRowId);
+        } else {
+            db()->execSqlSync("UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?", hash);
+        }
+        rtRedisRevoke(hash);
 
         std::string jti;
         TokenPair pair;
@@ -139,11 +210,13 @@ AuthResult AuthService::refresh(const std::string& refreshToken) {
         pair.accessExpiresAt  = nowEpoch() + jwt_->accessTtl().count();
         pair.refreshExpiresAt = nowEpoch() + jwt_->refreshTtl().count();
 
+        auto newHash = sha256Hex(pair.refreshToken);
         db()->execSqlSync(
             "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
             userId,
-            sha256Hex(pair.refreshToken),
+            newHash,
             toMysqlDateTime(pair.refreshExpiresAt));
+        rtRedisAllow(newHash, userId, jwt_->refreshTtl());
 
         return pair;
     } catch (const drogon::orm::DrogonDbException& e) {
@@ -158,6 +231,7 @@ bool AuthService::logout(const std::string& refreshToken) {
         auto hash = sha256Hex(refreshToken);
         auto affected = db()->execSqlSync(
             "UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?", hash);
+        rtRedisRevoke(hash);
         return affected.affectedRows() > 0;
     } catch (const std::exception&) {
         return false;

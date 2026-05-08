@@ -47,3 +47,5 @@ keys/
 # Local media storage (dev only — prod will be S3)
 # Anchor with leading slash so it only matches the repo root, not server/.../media/
 /media/
+.claude/
+vcpkg_installed/

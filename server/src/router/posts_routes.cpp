@@ -1,6 +1,6 @@
 #include "monggle/router/routes.h"
 #include "monggle/auth/auth_service.h"
-#include "monggle/cache/ttl_cache.h"
+#include "monggle/cache/layered_cache.h"
 #include "monggle/middleware/rate_limiter.h"
 #include "monggle/posts/posts_service.h"
 
@@ -167,7 +167,7 @@ void configurePostsRoutes(std::shared_ptr<AuthService> authService,
             } else {
                 // Push fanout(write-invalidate): 작성자 본인 피드 캐시 무효화.
                 // 팔로워들의 캐시도 영향받지만 30초 TTL로 자연 만료 (단순화).
-                TtlCache::feedCache().invalidatePrefix("feed:" + std::to_string(*userId) + ":");
+                LayeredCache::feed().invalidatePrefix("feed:" + std::to_string(*userId) + ":");
                 auto resp = drogon::HttpResponse::newHttpJsonResponse(postToJson(std::get<Post>(result)));
                 resp->setStatusCode(drogon::k201Created);
                 cb(resp);
