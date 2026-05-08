@@ -17,13 +17,26 @@ import hashlib
 import math
 import os
 from functools import lru_cache
-from typing import List
+from typing import List, Literal
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 
 app = FastAPI(title="monggle-ai-hub", version="0.2.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 EMBED_DIM = 64
 DEFAULT_MODEL = os.getenv("MONGGLE_EMBEDDING_MODEL", "BAAI/bge-m3")
@@ -104,6 +117,32 @@ class CompareResponse(BaseModel):
     similarity: float
 
 
+class EvidenceItem(BaseModel):
+    title: str = ""
+    summary: str = ""
+    source: str = ""
+
+
+class DevlogDraftRequest(BaseModel):
+    mode: Literal["study", "daily"]
+    title: str = "개발일지"
+    feed: List[EvidenceItem] = []
+    naver: List[EvidenceItem] = []
+    github: List[EvidenceItem] = []
+    environment: str = ""
+    concepts: str = ""
+    learnings: str = ""
+    reflections: str = ""
+    blockers: str = ""
+    next_steps: str = ""
+
+
+class DevlogDraftResponse(BaseModel):
+    draft: str
+    model: str
+    fallback: bool = True
+
+
 # ---- 라우트 -------------------------------------------------------------------
 
 @app.get("/healthz")
@@ -121,3 +160,160 @@ def embed(req: EmbedRequest) -> EmbedResponse:
 def compare(req: CompareRequest) -> CompareResponse:
     sim = _cosine(_real_embed(req.a), _real_embed(req.b))
     return CompareResponse(similarity=sim)
+
+
+# ---- 개발일지 초안 -------------------------------------------------------------
+
+def _clean(text: str) -> str:
+    return " ".join(text.replace("\r", " ").replace("\n", " ").split()).strip()
+
+
+def _clip(text: str, max_len: int = 180) -> str:
+    text = _clean(text)
+    return text if len(text) <= max_len else f"{text[:max_len].rstrip()}..."
+
+
+def _sentence(text: str, fallback: str) -> str:
+    text = _clean(text)
+    if not text:
+        return fallback
+    return text if text[-1] in ".!?。" else f"{text}."
+
+
+def _first(items: List[str], fallback: str) -> str:
+    for item in items:
+        value = _clean(item)
+        if len(value) >= 2:
+            return value
+    return fallback
+
+
+def _memo_items(raw: str) -> List[str]:
+    out: List[str] = []
+    for chunk in raw.replace("·", ",").replace("/", ",").split(","):
+        for line in chunk.splitlines():
+            value = _clean(line)
+            if value:
+                out.append(value)
+    return out
+
+
+_DEFINITIONS = {
+    "React": ("react", "리액트"),
+    "Vite": ("vite",),
+    "Tailwind CSS": ("tailwind", "tailwind css"),
+    "TypeScript": ("typescript", "타입스크립트"),
+    "Docker": ("docker", "도커"),
+    "Docker Compose": ("docker compose", "compose"),
+    "MariaDB": ("mariadb", "mysql"),
+    "JWT": ("jwt",),
+    "Redis": ("redis",),
+    "FastAPI": ("fastapi",),
+    "임베딩": ("embedding", "embeddings", "임베딩"),
+    "BGE-m3": ("bge-m3", "bge"),
+    "API": ("api",),
+    "CORS": ("cors",),
+    "마이그레이션": ("migration", "마이그레이션"),
+    "이벤트 소싱": ("event sourcing", "이벤트 소싱"),
+    "스냅샷": ("snapshot", "스냅샷"),
+    "Git 커밋": ("commit", "커밋"),
+}
+
+_DEFINITION_TEXT = {
+    "React": "화면을 컴포넌트 단위로 나누고 상태 변화에 맞춰 UI를 갱신하는 프론트엔드 라이브러리",
+    "Vite": "개발 서버와 번들링을 빠르게 처리하는 프론트엔드 빌드 도구",
+    "Tailwind CSS": "유틸리티 클래스를 조합해 화면 스타일을 만드는 CSS 프레임워크",
+    "TypeScript": "JavaScript에 정적 타입을 더해 코드 오류를 더 일찍 확인하게 해주는 언어",
+    "Docker": "애플리케이션과 실행 환경을 컨테이너로 묶어 일관되게 실행하게 해주는 도구",
+    "Docker Compose": "여러 컨테이너를 하나의 설정으로 함께 실행하고 관리하는 도구",
+    "MariaDB": "테이블과 SQL로 데이터를 다루는 MySQL 계열 관계형 데이터베이스",
+    "JWT": "사용자 인증 정보를 서명된 토큰으로 주고받는 방식",
+    "Redis": "캐시나 큐에 자주 쓰이는 인메모리 key-value 저장소",
+    "FastAPI": "Python 타입 힌트를 활용해 API 서버를 빠르게 만드는 웹 프레임워크",
+    "임베딩": "텍스트를 의미 비교가 가능한 숫자 벡터로 바꾸는 표현 방식",
+    "BGE-m3": "검색과 의미 비교에 쓰이는 다국어 텍스트 임베딩 모델",
+    "API": "프로그램 사이에서 기능과 데이터를 주고받는 약속된 인터페이스",
+    "CORS": "브라우저가 다른 출처의 서버 요청을 허용할지 판단하는 보안 정책",
+    "마이그레이션": "데이터베이스 구조나 데이터를 버전별로 안전하게 변경하는 작업",
+    "이벤트 소싱": "상태 변화 이벤트를 누적해 과거 시점의 상태를 재구성하는 설계 방식",
+    "스냅샷": "특정 시점의 상태를 저장해 복원 비용을 줄이는 데이터",
+    "Git 커밋": "Git에서 코드 변경을 하나의 기록 단위로 저장한 것",
+}
+
+
+def _concept_paragraph(req: DevlogDraftRequest) -> str:
+    text = " ".join([
+        req.concepts,
+        req.learnings,
+        " ".join(item.title + " " + item.summary for item in req.feed + req.naver + req.github),
+    ]).lower()
+    found: List[str] = []
+    for label, terms in _DEFINITIONS.items():
+        if any(term in text for term in terms):
+            found.append(label)
+    if not found:
+        return "개념 정의는 아직 충분히 정리되지 않아서, 오늘은 이해한 범위까지만 기록해 둔다."
+    definitions = [f"{label}는 {_DEFINITION_TEXT[label]}이다" for label in found[:5]]
+    return f"개념을 정리하면, {'. '.join(definitions)}."
+
+
+def _reference_note(req: DevlogDraftRequest) -> str:
+    refs = []
+    if req.feed:
+        refs.append(f"피드 글 {len(req.feed)}개")
+    if req.naver:
+        refs.append(f"네이버 글 {len(req.naver)}개")
+    if req.github:
+        refs.append(f"참조 GitHub {len(req.github)}개")
+    return f"\n\n참고한 기록: {', '.join(refs)}." if refs else ""
+
+
+@app.post("/devlog/draft", response_model=DevlogDraftResponse)
+def devlog_draft(req: DevlogDraftRequest) -> DevlogDraftResponse:
+    title = _clean(req.title) or "개발일지"
+    feed_topics = [item.title or item.summary for item in req.feed]
+    naver_topics = [item.title or item.summary for item in req.naver]
+    github_topics = [item.summary for item in req.github]
+
+    if req.mode == "study":
+        concept = _first(_memo_items(req.concepts) + feed_topics + naver_topics, "오늘 공부한 내용")
+        learning = _sentence(_first(_memo_items(req.learnings), ""), "아직 배운 점을 짧게만 남겨 두어서, 다음 기록에서 예시와 함께 더 구체화해야 한다.")
+        reflection = _sentence(_first(_memo_items(req.reflections), ""), "공부하면서 생긴 생각은 이어서 더 정리할 필요가 있다.")
+        next_step = _sentence(_first(_memo_items(req.next_steps), ""), "오늘 적은 개념이 실제 코드나 작업 흐름에서 어떻게 쓰이는지 더 확인해 보려고 한다.")
+        draft = f"""# {title}
+
+오늘은 {concept}을 주제로 공부했다. 짧게 남긴 기록을 다시 읽어보니, 단어를 외우는 것보다 그 개념이 왜 필요한지 정리하는 과정이 더 중요했다.
+
+{_concept_paragraph(req)}
+
+이번에 배운 점은 {learning}
+
+공부하면서 느낀 점은 {reflection}
+
+공부 환경과 흐름은 {_sentence(req.environment, "따로 남긴 환경 메모가 없어 자세히 정리하지 못했다.")}
+
+다음에는 {next_step}
+
+입력한 기록에서 확인하기 어려운 완료, 성능 개선, 문제 해결 여부는 단정하지 않았다.{_reference_note(req)}
+"""
+    else:
+        work = _first(feed_topics + naver_topics + github_topics, "오늘 남긴 개발 기록")
+        blocker = _sentence(_first(_memo_items(req.blockers), ""), "막혔던 부분은 아직 짧게만 남아 있어 정확한 원인까지는 단정하지 않았다.")
+        learning = _sentence(_first(_memo_items(req.learnings), ""), "배운 점은 더 정리할 여지가 있어 다음 기록에서 코드나 상황과 함께 보강하려고 한다.")
+        next_step = _sentence(_first(_memo_items(req.next_steps), ""), "오늘 남긴 기록을 기준으로 다음 작업을 이어서 정리할 예정이다.")
+        draft = f"""# {title}
+
+오늘은 {work} 관련 작업을 진행했다. 기록을 다시 보니 작업 자체보다, 중간에 어떤 흐름으로 막히고 다시 확인했는지가 더 중요하게 남았다.
+
+작업 환경은 {_sentence(req.environment, "따로 남긴 환경 메모가 없어 자세히 정리하지 못했다.")}
+
+막혔던 부분은 {blocker}
+
+그 과정에서 배운 점은 {learning}
+
+다음에는 {next_step}
+
+입력한 기록에서 확인하기 어려운 완료, 성능 개선, 문제 해결 여부는 단정하지 않았다.{_reference_note(req)}
+"""
+
+    return DevlogDraftResponse(draft=draft.strip() + "\n", model=_model_name())

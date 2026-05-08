@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { VisibilitySelect } from "@/components/ui/select-visibility";
 import { Textarea } from "@/components/ui/textarea";
 
+const AI_HUB_BASE = (import.meta.env.VITE_AI_HUB_BASE as string) || "http://127.0.0.1:9100";
+
 interface Props {
   selectedPosts: FeedItem[];
   onClose: () => void;
@@ -78,6 +80,12 @@ function commitToLine(commit: GitHubCommit) {
   const date = commit.authorDate ? commit.authorDate.slice(0, 10) : "date unknown";
   const firstLine = commit.message.split("\n")[0] || "commit message empty";
   return `${shortSha} | ${date} | ${firstLine} | ${commit.url}`;
+}
+
+function commitToSummary(commit: GitHubCommit) {
+  const date = commit.authorDate ? commit.authorDate.slice(0, 10) : "날짜 미상";
+  const firstLine = commit.message.split("\n")[0] || "커밋 메시지 없음";
+  return `${date} ${firstLine}`;
 }
 
 function normalizeGithubRepo(input: string) {
@@ -320,6 +328,36 @@ function buildReferenceNote(posts: FeedItem[], naverLines: string[], githubLines
   return `\n\n참고한 기록: ${refs.join(", ")}.`;
 }
 
+function naverEvidenceItems(docs: NaverCafeDoc[], rawLines: string[]) {
+  if (docs.length > 0) {
+    return docs.map((doc) => ({
+      title: doc.title || `네이버 글 ${doc.articleId || ""}`.trim(),
+      summary: excerpt(doc.body, 180),
+      source: doc.url || doc.sourceType || "naver",
+    }));
+  }
+  return rawLines.map((line, idx) => ({
+    title: `네이버 메모 ${idx + 1}`,
+    summary: excerpt(line, 180),
+    source: "manual",
+  }));
+}
+
+function githubEvidenceItems(commits: GitHubCommit[], rawLines: string[]) {
+  if (commits.length > 0) {
+    return commits.map((commit) => ({
+      title: commit.message.split("\n")[0] || "GitHub 기록",
+      summary: commitToSummary(commit),
+      source: "github",
+    }));
+  }
+  return rawLines.map((line, idx) => ({
+    title: `GitHub 메모 ${idx + 1}`,
+    summary: line.replace(/https?:\/\/\S+/g, "").replace(/[a-f0-9]{7,40}/gi, "").trim(),
+    source: "manual",
+  }));
+}
+
 function buildDraftGuardNote() {
   return "입력한 기록에서 확인하기 어려운 완료, 성능 개선, 문제 해결 여부는 단정하지 않았다.";
 }
@@ -477,7 +515,9 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   const [title, setTitle] = useState(selectedPosts[0]?.title?.trim() || "개발일지");
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [naverRaw, setNaverRaw] = useState("");
+  const [naverDocs, setNaverDocs] = useState<NaverCafeDoc[]>([]);
   const [githubRaw, setGithubRaw] = useState("");
+  const [githubCommits, setGithubCommits] = useState<GitHubCommit[]>([]);
   const [githubRepo, setGithubRepo] = useState(
     () => localStorage.getItem(GITHUB_REPO_KEY) || "rlahi1022-cloud/mongglemongle"
   );
@@ -492,6 +532,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   const [nextSteps, setNextSteps] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [drafting, setDrafting] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState(false);
 
@@ -499,8 +540,8 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   const githubLines = useMemo(() => splitLines(githubRaw), [githubRaw]);
 
   const sourceCounts: Record<SourceKind, number> = {
-    naver: naverLines.length,
-    github: githubLines.length,
+    naver: naverDocs.length || naverLines.length,
+    github: githubCommits.length || githubLines.length,
   };
 
   const importNaverFiles = async (files: FileList | null) => {
@@ -521,6 +562,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
         });
       }
       const imported = docs.map(naverDocToLine).join("\n");
+      setNaverDocs((prev) => [...prev, ...docs]);
       setNaverRaw((prev) => [prev.trim(), imported].filter(Boolean).join("\n"));
     } catch {
       setError("네이버 Markdown 파일을 읽지 못했습니다.");
@@ -559,6 +601,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
         url: item.html_url || "",
       }));
       const imported = commits.map(commitToLine).join("\n");
+      setGithubCommits((prev) => [...prev, ...commits]);
       setGithubRaw((prev) => [prev.trim(), imported].filter(Boolean).join("\n"));
       if (commits.length === 0) setError("조건에 맞는 GitHub 커밋이 없습니다.");
     } catch (e) {
@@ -568,7 +611,35 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
     }
   };
 
-  const createDraft = () => {
+  const createAiDraft = async () => {
+    const resp = await fetch(`${AI_HUB_BASE}/devlog/draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode,
+        title: title.trim() || (mode === "study" ? "공부형 개발일지" : "당일 개발 경험"),
+        feed: selectedPosts.map((post) => ({
+          title: post.title || "피드 글",
+          summary: excerpt(post.body, 180),
+          source: "feed",
+        })),
+        naver: naverEvidenceItems(naverDocs, naverLines),
+        github: githubEvidenceItems(githubCommits, githubLines),
+        environment: environmentNotes,
+        concepts,
+        learnings,
+        reflections,
+        blockers,
+        next_steps: nextSteps,
+      }),
+    });
+    if (!resp.ok) throw new Error(`AI Hub ${resp.status}`);
+    const payload = await resp.json() as { draft?: string };
+    if (!payload.draft?.trim()) throw new Error("AI Hub draft empty");
+    return payload.draft;
+  };
+
+  const createDraft = async () => {
     const hasEvidence = selectedPosts.length > 0 || naverLines.length > 0 || githubLines.length > 0;
     if (!hasEvidence) {
       setError("피드 글, 네이버 글, GitHub 기록 중 하나 이상의 근거가 필요합니다.");
@@ -599,30 +670,41 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
       return;
     }
     setError(null);
-    const nextDraft = mode === "study"
-      ? buildStudyDraft({
-        posts: selectedPosts,
-        naverLines,
-        githubLines,
-        environmentNotes,
-        concepts,
-        learnings,
-        reflections,
-        nextSteps,
-      })
-      : buildDailyDraft({
-        posts: selectedPosts,
-        naverLines,
-        githubLines,
-        environmentNotes,
-        blockers,
-        learnings,
-        nextSteps,
-      })
-    ;
-    setTitle(titleFromDraft(nextDraft).slice(0, 200));
-    setDraft(nextDraft);
-    setPublished(false);
+    setDrafting(true);
+    try {
+      const nextDraft = await createAiDraft();
+      setTitle(titleFromDraft(nextDraft).slice(0, 200));
+      setDraft(nextDraft);
+      setPublished(false);
+    } catch {
+      const fallbackDraft = mode === "study"
+        ? buildStudyDraft({
+          posts: selectedPosts,
+          naverLines,
+          githubLines,
+          environmentNotes,
+          concepts,
+          learnings,
+          reflections,
+          nextSteps,
+        })
+        : buildDailyDraft({
+          posts: selectedPosts,
+          naverLines,
+          githubLines,
+          environmentNotes,
+          blockers,
+          learnings,
+          nextSteps,
+        })
+      ;
+      setTitle(titleFromDraft(fallbackDraft).slice(0, 200));
+      setDraft(fallbackDraft);
+      setPublished(false);
+      setError("AI Hub 초안 생성에 실패해 로컬 초안으로 생성했습니다.");
+    } finally {
+      setDrafting(false);
+    }
   };
 
   const publishDraft = async () => {
@@ -708,19 +790,47 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
 
             <section className="space-y-2">
               <h3 className="text-sm font-bold">네이버 글 근거</h3>
-              <input
-                type="file"
-                accept=".md,text/markdown,text/plain"
-                multiple
-                onChange={(e) => importNaverFiles(e.target.files)}
-                className="text-sm"
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <label
+                  htmlFor="naver-evidence-input"
+                  className="inline-flex h-10 cursor-pointer items-center rounded-2xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-700 transition hover:bg-sky-100"
+                >
+                  파일 선택
+                </label>
+                <input
+                  id="naver-evidence-input"
+                  type="file"
+                  accept=".md,text/markdown,text/plain"
+                  multiple
+                  onChange={(e) => importNaverFiles(e.target.files)}
+                  className="sr-only"
+                />
+                <span className="text-sm text-muted-foreground">
+                  {naverDocs.length > 0 ? `${naverDocs.length}개 불러옴` : "선택된 파일 없음"}
+                </span>
+              </div>
+              {naverDocs.length > 0 && (
+                <div className="rounded-2xl border bg-white/70 px-3 py-2 text-xs text-muted-foreground">
+                  <div className="font-bold text-foreground">가져온 네이버 글</div>
+                  <div className="mt-1 space-y-1">
+                    {naverDocs.slice(0, 5).map((doc, idx) => (
+                      <div key={`${doc.articleId || doc.title}-${idx}`} className="truncate">
+                        {idx + 1}. {doc.title || `네이버 글 ${idx + 1}`}
+                      </div>
+                    ))}
+                    {naverDocs.length > 5 && <div>외 {naverDocs.length - 5}개</div>}
+                  </div>
+                </div>
+              )}
               <Textarea
                 value={naverRaw}
                 onChange={(e) => setNaverRaw(e.target.value)}
                 rows={4}
-                placeholder="네이버 카페 원문 추출기에서 저장한 .md 파일을 불러오거나 URL/핵심 문장을 입력"
+                placeholder="네이버 카페 원문 추출기에서 저장한 .md 파일을 불러오거나 핵심 문장만 입력"
               />
+              <div className="text-xs text-muted-foreground">
+                긴 원문은 초안 본문에 직접 붙이지 않고 요약용 근거로만 사용합니다.
+              </div>
             </section>
 
             <section className="space-y-2">
@@ -754,12 +864,31 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
               >
                 {githubLoading ? "불러오는 중..." : "GitHub 커밋 불러오기"}
               </Button>
-              <Textarea
-                value={githubRaw}
-                onChange={(e) => setGithubRaw(e.target.value)}
-                rows={4}
-                placeholder="커밋, PR, 이슈, 작업 로그"
-              />
+              <details className="rounded-2xl border bg-white/70 px-3 py-2 text-sm">
+                <summary className="cursor-pointer font-bold text-sky-700">
+                  참조 GitHub {sourceCounts.github}개
+                </summary>
+                <div className="mt-2 space-y-2">
+                  {githubCommits.length > 0 && (
+                    <div className="max-h-32 space-y-1 overflow-y-auto text-xs text-muted-foreground">
+                      {githubCommits.map((commit, idx) => (
+                        <div key={`${commit.sha}-${idx}`} className="truncate">
+                          {idx + 1}. {commitToSummary(commit)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <Textarea
+                    value={githubRaw}
+                    onChange={(e) => {
+                      setGithubRaw(e.target.value);
+                      setGithubCommits([]);
+                    }}
+                    rows={4}
+                    placeholder="커밋, PR, 이슈, 작업 로그를 직접 붙여넣을 수 있습니다. 초안 본문에는 해시나 URL을 노출하지 않습니다."
+                  />
+                </div>
+              </details>
             </section>
 
             <section className="space-y-2">
@@ -833,8 +962,8 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
             {published && <div className="rounded-2xl bg-primary/10 px-3 py-2 text-sm font-medium text-primary">발행 완료</div>}
 
             <div className="grid grid-cols-2 gap-2">
-              <Button type="button" onClick={createDraft} className="rounded-2xl">
-                초안 생성
+              <Button type="button" onClick={createDraft} disabled={drafting} className="rounded-2xl">
+                {drafting ? "초안 생성 중..." : "초안 생성"}
               </Button>
               <Button type="button" variant="outline" onClick={publishDraft} disabled={publishing || !draft.trim()} className="rounded-2xl bg-white">
                 {publishing ? "발행 중..." : "발행"}
