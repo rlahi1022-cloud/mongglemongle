@@ -15,6 +15,10 @@ interface Props {
 
 type SourceKind = "naver" | "github";
 type DevlogMode = "study" | "daily";
+type FieldErrors = Partial<Record<
+  "evidence" | "environment" | "concepts" | "learnings" | "reflections" | "nextSteps" | "blockers",
+  string
+>>;
 const GITHUB_REPO_KEY = "monggle_github_repo";
 const DEVLOG_BODY_MAX_BYTES = 60000;
 
@@ -358,6 +362,29 @@ function githubEvidenceItems(commits: GitHubCommit[], rawLines: string[]) {
   }));
 }
 
+function withoutLine(raw: string, lineToRemove: string) {
+  let removed = false;
+  return raw
+    .split("\n")
+    .filter((line) => {
+      if (!removed && line.trim() === lineToRemove.trim()) {
+        removed = true;
+        return false;
+      }
+      return true;
+    })
+    .join("\n")
+    .trim();
+}
+
+function removeLineAt(raw: string, index: number) {
+  return raw
+    .split("\n")
+    .filter((line) => line.trim())
+    .filter((_, idx) => idx !== index)
+    .join("\n");
+}
+
 function buildDraftGuardNote() {
   return "입력한 기록에서 확인하기 어려운 완료, 성능 개선, 문제 해결 여부는 단정하지 않았다.";
 }
@@ -531,6 +558,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   const [reflections, setReflections] = useState("");
   const [nextSteps, setNextSteps] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [draft, setDraft] = useState("");
   const [drafting, setDrafting] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -542,6 +570,37 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   const sourceCounts: Record<SourceKind, number> = {
     naver: naverDocs.length || naverLines.length,
     github: githubCommits.length || githubLines.length,
+  };
+
+  const validateDraftInputs = () => {
+    const nextErrors: FieldErrors = {};
+    const hasEvidence = selectedPosts.length > 0 || naverLines.length > 0 || githubLines.length > 0;
+    if (!hasEvidence) {
+      nextErrors.evidence = "피드 글, 네이버 글, GitHub 기록 중 하나 이상의 근거가 필요합니다.";
+    }
+    const envError = validateMeaning("개발 환경과 작업감", environmentNotes, true);
+    if (envError) {
+      nextErrors.environment = `${envError} 짧게 써도 괜찮지만, 최소한 의미가 확인되어야 합니다.`;
+    }
+    if (mode === "study") {
+      const conceptError = validateMeaning("개념", concepts);
+      const learningError = validateMeaning("배운 점", learnings);
+      const reflectionError = validateMeaning("새롭게 느낀 점", reflections);
+      const nextStepError = validateMeaning("더 확인할 것", nextSteps);
+      if (conceptError) nextErrors.concepts = conceptError;
+      if (learningError) nextErrors.learnings = learningError;
+      if (reflectionError) nextErrors.reflections = reflectionError;
+      if (nextStepError) nextErrors.nextSteps = nextStepError;
+    } else {
+      const blockerError = validateMeaning("막힘", blockers);
+      const learningError = validateMeaning("배운 점", learnings);
+      const nextStepError = validateMeaning("다음 작업", nextSteps);
+      if (blockerError) nextErrors.blockers = blockerError;
+      if (learningError) nextErrors.learnings = learningError;
+      if (nextStepError) nextErrors.nextSteps = nextStepError;
+    }
+    setFieldErrors(nextErrors);
+    return nextErrors;
   };
 
   const importNaverFiles = async (files: FileList | null) => {
@@ -567,6 +626,16 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
     } catch {
       setError("네이버 Markdown 파일을 읽지 못했습니다.");
     }
+  };
+
+  const removeNaverDoc = (target: NaverCafeDoc, index: number) => {
+    const line = naverDocToLine(target);
+    setNaverDocs((prev) => prev.filter((_, idx) => idx !== index));
+    setNaverRaw((prev) => withoutLine(prev, line));
+  };
+
+  const removeNaverManualLine = (index: number) => {
+    setNaverRaw((prev) => removeLineAt(prev, index));
   };
 
   const importGithubCommits = async () => {
@@ -611,6 +680,16 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
     }
   };
 
+  const removeGithubCommit = (target: GitHubCommit, index: number) => {
+    const line = commitToLine(target);
+    setGithubCommits((prev) => prev.filter((_, idx) => idx !== index));
+    setGithubRaw((prev) => withoutLine(prev, line));
+  };
+
+  const removeGithubManualLine = (index: number) => {
+    setGithubRaw((prev) => removeLineAt(prev, index));
+  };
+
   const createAiDraft = async () => {
     const resp = await fetch(`${AI_HUB_BASE}/devlog/draft`, {
       method: "POST",
@@ -640,33 +719,10 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   };
 
   const createDraft = async () => {
-    const hasEvidence = selectedPosts.length > 0 || naverLines.length > 0 || githubLines.length > 0;
-    if (!hasEvidence) {
-      setError("피드 글, 네이버 글, GitHub 기록 중 하나 이상의 근거가 필요합니다.");
-      return;
-    }
-    const envError = validateMeaning("개발 환경과 작업감", environmentNotes, true);
-    if (envError) {
-      setError(`${envError} 짧게 써도 괜찮지만, 최소한 의미가 확인되어야 합니다.`);
-      return;
-    }
-    const fieldsToCheck = mode === "study"
-      ? [
-        ["개념", concepts],
-        ["배운 점", learnings],
-        ["새롭게 느낀 점", reflections],
-        ["더 확인할 것", nextSteps],
-      ]
-      : [
-        ["막힘", blockers],
-        ["배운 점", learnings],
-        ["다음 작업", nextSteps],
-      ];
-    const invalid = fieldsToCheck
-      .map(([label, value]) => validateMeaning(label, value))
-      .find(Boolean);
-    if (invalid) {
-      setError(invalid);
+    const nextErrors = validateDraftInputs();
+    const firstError = Object.values(nextErrors).find(Boolean);
+    if (firstError) {
+      setError(firstError);
       return;
     }
     setError(null);
@@ -790,6 +846,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
 
             <section className="space-y-2">
               <h3 className="text-sm font-bold">네이버 글 근거</h3>
+              {fieldErrors.evidence && <div className="text-xs font-medium text-destructive">{fieldErrors.evidence}</div>}
               <div className="flex flex-wrap items-center gap-2">
                 <label
                   htmlFor="naver-evidence-input"
@@ -810,17 +867,26 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
                 </span>
               </div>
               {naverDocs.length > 0 && (
-                <div className="rounded-2xl border bg-white/70 px-3 py-2 text-xs text-muted-foreground">
-                  <div className="font-bold text-foreground">가져온 네이버 글</div>
+                <details className="rounded-2xl border bg-white/70 px-3 py-2 text-xs text-muted-foreground" open>
+                  <summary className="cursor-pointer font-bold text-foreground">가져온 네이버 글 {naverDocs.length}개</summary>
                   <div className="mt-1 space-y-1">
                     {naverDocs.slice(0, 5).map((doc, idx) => (
-                      <div key={`${doc.articleId || doc.title}-${idx}`} className="truncate">
-                        {idx + 1}. {doc.title || `네이버 글 ${idx + 1}`}
+                      <div key={`${doc.articleId || doc.title}-${idx}`} className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate">
+                          {idx + 1}. {doc.title || `네이버 글 ${idx + 1}`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeNaverDoc(doc, idx)}
+                          className="shrink-0 rounded-full px-2 py-0.5 font-bold text-destructive hover:bg-destructive/10"
+                        >
+                          삭제
+                        </button>
                       </div>
                     ))}
                     {naverDocs.length > 5 && <div>외 {naverDocs.length - 5}개</div>}
                   </div>
-                </div>
+                </details>
               )}
               <Textarea
                 value={naverRaw}
@@ -831,6 +897,25 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
               <div className="text-xs text-muted-foreground">
                 긴 원문은 초안 본문에 직접 붙이지 않고 요약용 근거로만 사용합니다.
               </div>
+              {naverDocs.length === 0 && naverLines.length > 0 && (
+                <details className="rounded-2xl border bg-white/70 px-3 py-2 text-xs text-muted-foreground">
+                  <summary className="cursor-pointer font-bold text-foreground">직접 입력한 네이버 근거 {naverLines.length}개</summary>
+                  <div className="mt-2 space-y-1">
+                    {naverLines.map((line, idx) => (
+                      <div key={`${line}-${idx}`} className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate">{line}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeNaverManualLine(idx)}
+                          className="shrink-0 rounded-full px-2 py-0.5 font-bold text-destructive hover:bg-destructive/10"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </section>
 
             <section className="space-y-2">
@@ -872,8 +957,35 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
                   {githubCommits.length > 0 && (
                     <div className="max-h-32 space-y-1 overflow-y-auto text-xs text-muted-foreground">
                       {githubCommits.map((commit, idx) => (
-                        <div key={`${commit.sha}-${idx}`} className="truncate">
-                          {idx + 1}. {commitToSummary(commit)}
+                        <div key={`${commit.sha}-${idx}`} className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate">
+                            {idx + 1}. {commitToSummary(commit)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeGithubCommit(commit, idx)}
+                            className="shrink-0 rounded-full px-2 py-0.5 font-bold text-destructive hover:bg-destructive/10"
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {githubCommits.length === 0 && githubLines.length > 0 && (
+                    <div className="max-h-32 space-y-1 overflow-y-auto text-xs text-muted-foreground">
+                      {githubLines.map((line, idx) => (
+                        <div key={`${line}-${idx}`} className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate">
+                            {line.replace(/https?:\/\/\S+/g, "").replace(/[a-f0-9]{7,40}/gi, "").trim() || `GitHub 메모 ${idx + 1}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeGithubManualLine(idx)}
+                            className="shrink-0 rounded-full px-2 py-0.5 font-bold text-destructive hover:bg-destructive/10"
+                          >
+                            삭제
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -904,6 +1016,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
                   ? "공부한 장소/도구, 참고 자료를 읽은 흐름, 개념을 이해할 때의 느낌"
                   : "IDE, 터미널, 빌드/실행 환경, 실제로 느낀 막힘이나 흐름"}
               />
+              {fieldErrors.environment && <div className="text-xs font-medium text-destructive">{fieldErrors.environment}</div>}
             </section>
 
             {mode === "study" ? (
@@ -915,24 +1028,28 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
                   rows={2}
                   placeholder="정리한 개념. 예: 임베딩, Docker, JWT를 배웠어"
                 />
+                {fieldErrors.concepts && <div className="text-xs font-medium text-destructive">{fieldErrors.concepts}</div>}
                 <Textarea
                   value={learnings}
                   onChange={(e) => setLearnings(e.target.value)}
                   rows={2}
                   placeholder="배운 점"
                 />
+                {fieldErrors.learnings && <div className="text-xs font-medium text-destructive">{fieldErrors.learnings}</div>}
                 <Textarea
                   value={reflections}
                   onChange={(e) => setReflections(e.target.value)}
                   rows={2}
                   placeholder="새롭게 느낀 점"
                 />
+                {fieldErrors.reflections && <div className="text-xs font-medium text-destructive">{fieldErrors.reflections}</div>}
                 <Textarea
                   value={nextSteps}
                   onChange={(e) => setNextSteps(e.target.value)}
                   rows={2}
                   placeholder="더 확인할 것"
                 />
+                {fieldErrors.nextSteps && <div className="text-xs font-medium text-destructive">{fieldErrors.nextSteps}</div>}
               </section>
             ) : (
               <section className="space-y-2">
@@ -943,18 +1060,21 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
                   rows={2}
                   placeholder="막혔던 부분"
                 />
+                {fieldErrors.blockers && <div className="text-xs font-medium text-destructive">{fieldErrors.blockers}</div>}
                 <Textarea
                   value={learnings}
                   onChange={(e) => setLearnings(e.target.value)}
                   rows={2}
                   placeholder="배운 점"
                 />
+                {fieldErrors.learnings && <div className="text-xs font-medium text-destructive">{fieldErrors.learnings}</div>}
                 <Textarea
                   value={nextSteps}
                   onChange={(e) => setNextSteps(e.target.value)}
                   rows={2}
                   placeholder="다음 작업"
                 />
+                {fieldErrors.nextSteps && <div className="text-xs font-medium text-destructive">{fieldErrors.nextSteps}</div>}
               </section>
             )}
 

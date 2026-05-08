@@ -126,9 +126,9 @@ class EvidenceItem(BaseModel):
 class DevlogDraftRequest(BaseModel):
     mode: Literal["study", "daily"]
     title: str = "개발일지"
-    feed: List[EvidenceItem] = []
-    naver: List[EvidenceItem] = []
-    github: List[EvidenceItem] = []
+    feed: List[EvidenceItem] = Field(default_factory=list)
+    naver: List[EvidenceItem] = Field(default_factory=list)
+    github: List[EvidenceItem] = Field(default_factory=list)
     environment: str = ""
     concepts: str = ""
     learnings: str = ""
@@ -188,6 +188,30 @@ def _first(items: List[str], fallback: str) -> str:
     return fallback
 
 
+def _unique(items: List[str], limit: int = 4) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for item in items:
+        value = _clean(item)
+        key = value.lower()
+        if not value or key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _natural_list(items: List[str]) -> str:
+    items = _unique(items, 3)
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return ", ".join(items[:-1]) + f", 그리고 {items[-1]}"
+
+
 def _memo_items(raw: str) -> List[str]:
     out: List[str] = []
     for chunk in raw.replace("·", ",").replace("/", ",").split(","):
@@ -196,6 +220,38 @@ def _memo_items(raw: str) -> List[str]:
             if value:
                 out.append(value)
     return out
+
+
+def _expand_learning(raw: str, fallback: str) -> str:
+    item = _first(_memo_items(raw), "")
+    if not item:
+        return fallback
+    if len(item) < 16:
+        return f"{item}라는 점이다. 짧은 메모지만, 다음에 비슷한 상황을 만났을 때 판단 기준으로 다시 꺼내볼 수 있는 내용이었다."
+    return _sentence(item, fallback)
+
+
+def _expand_next(raw: str, fallback: str) -> str:
+    item = _first(_memo_items(raw), "")
+    if not item:
+        return fallback
+    if len(item) < 16:
+        return f"{item}을 먼저 확인해 보려고 한다. 기록만 남기는 데서 끝내지 않고, 바로 검증할 수 있는 작은 단위로 이어가면 좋겠다."
+    return _sentence(item, fallback)
+
+
+def _activity_summary(req: DevlogDraftRequest) -> str:
+    feed = _natural_list([item.title or item.summary for item in req.feed])
+    naver = _natural_list([item.title or item.summary for item in req.naver])
+    github = _natural_list([item.summary for item in req.github])
+    pieces = []
+    if feed:
+        pieces.append(f"피드에는 {feed}가 남아 있었다")
+    if naver:
+        pieces.append(f"네이버 글에서는 {naver}를 참고했다")
+    if github:
+        pieces.append(f"GitHub 기록은 {github} 흐름을 확인하는 근거로만 사용했다")
+    return ". ".join(pieces)
 
 
 _DEFINITIONS = {
@@ -268,6 +324,12 @@ def _reference_note(req: DevlogDraftRequest) -> str:
     return f"\n\n참고한 기록: {', '.join(refs)}." if refs else ""
 
 
+def _guard_note(req: DevlogDraftRequest) -> str:
+    if req.feed or req.naver or req.github:
+        return "참고 기록은 초안의 배경으로만 사용했고, 기록에서 확인되지 않는 완료 여부나 성능 개선은 단정하지 않았다."
+    return "입력한 기록에서 확인하기 어려운 완료, 성능 개선, 문제 해결 여부는 단정하지 않았다."
+
+
 @app.post("/devlog/draft", response_model=DevlogDraftResponse)
 def devlog_draft(req: DevlogDraftRequest) -> DevlogDraftResponse:
     title = _clean(req.title) or "개발일지"
@@ -277,14 +339,17 @@ def devlog_draft(req: DevlogDraftRequest) -> DevlogDraftResponse:
 
     if req.mode == "study":
         concept = _first(_memo_items(req.concepts) + feed_topics + naver_topics, "오늘 공부한 내용")
-        learning = _sentence(_first(_memo_items(req.learnings), ""), "아직 배운 점을 짧게만 남겨 두어서, 다음 기록에서 예시와 함께 더 구체화해야 한다.")
+        learning = _expand_learning(req.learnings, "아직 배운 점을 짧게만 남겨 두어서, 다음 기록에서 예시와 함께 더 구체화해야 한다.")
         reflection = _sentence(_first(_memo_items(req.reflections), ""), "공부하면서 생긴 생각은 이어서 더 정리할 필요가 있다.")
-        next_step = _sentence(_first(_memo_items(req.next_steps), ""), "오늘 적은 개념이 실제 코드나 작업 흐름에서 어떻게 쓰이는지 더 확인해 보려고 한다.")
+        next_step = _expand_next(req.next_steps, "오늘 적은 개념이 실제 코드나 작업 흐름에서 어떻게 쓰이는지 더 확인해 보려고 한다.")
+        activity = _activity_summary(req)
         draft = f"""# {title}
 
 오늘은 {concept}을 주제로 공부했다. 짧게 남긴 기록을 다시 읽어보니, 단어를 외우는 것보다 그 개념이 왜 필요한지 정리하는 과정이 더 중요했다.
 
 {_concept_paragraph(req)}
+
+{activity + "." if activity else "참고 기록은 많지 않았지만, 오늘 적은 메모를 기준으로 이해한 부분과 부족한 부분을 나눠 보았다."}
 
 이번에 배운 점은 {learning}
 
@@ -294,16 +359,19 @@ def devlog_draft(req: DevlogDraftRequest) -> DevlogDraftResponse:
 
 다음에는 {next_step}
 
-입력한 기록에서 확인하기 어려운 완료, 성능 개선, 문제 해결 여부는 단정하지 않았다.{_reference_note(req)}
+{_guard_note(req)}{_reference_note(req)}
 """
     else:
         work = _first(feed_topics + naver_topics + github_topics, "오늘 남긴 개발 기록")
         blocker = _sentence(_first(_memo_items(req.blockers), ""), "막혔던 부분은 아직 짧게만 남아 있어 정확한 원인까지는 단정하지 않았다.")
-        learning = _sentence(_first(_memo_items(req.learnings), ""), "배운 점은 더 정리할 여지가 있어 다음 기록에서 코드나 상황과 함께 보강하려고 한다.")
-        next_step = _sentence(_first(_memo_items(req.next_steps), ""), "오늘 남긴 기록을 기준으로 다음 작업을 이어서 정리할 예정이다.")
+        learning = _expand_learning(req.learnings, "배운 점은 더 정리할 여지가 있어 다음 기록에서 코드나 상황과 함께 보강하려고 한다.")
+        next_step = _expand_next(req.next_steps, "오늘 남긴 기록을 기준으로 다음 작업을 이어서 정리할 예정이다.")
+        activity = _activity_summary(req)
         draft = f"""# {title}
 
 오늘은 {work} 관련 작업을 진행했다. 기록을 다시 보니 작업 자체보다, 중간에 어떤 흐름으로 막히고 다시 확인했는지가 더 중요하게 남았다.
+
+{activity + "." if activity else "작업 근거가 많지는 않았기 때문에, 오늘은 사용자가 직접 남긴 메모를 중심으로만 정리했다."}
 
 작업 환경은 {_sentence(req.environment, "따로 남긴 환경 메모가 없어 자세히 정리하지 못했다.")}
 
@@ -313,7 +381,7 @@ def devlog_draft(req: DevlogDraftRequest) -> DevlogDraftResponse:
 
 다음에는 {next_step}
 
-입력한 기록에서 확인하기 어려운 완료, 성능 개선, 문제 해결 여부는 단정하지 않았다.{_reference_note(req)}
+{_guard_note(req)}{_reference_note(req)}
 """
 
     return DevlogDraftResponse(draft=draft.strip() + "\n", model=_model_name())
