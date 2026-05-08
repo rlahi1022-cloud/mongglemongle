@@ -14,11 +14,68 @@ interface Props {
 type SourceKind = "naver" | "github";
 type DevlogMode = "study" | "daily";
 
+interface NaverCafeDoc {
+  title: string;
+  url: string;
+  articleId: string;
+  category: string;
+  sourceType: string;
+  body: string;
+}
+
+interface GitHubCommit {
+  sha: string;
+  message: string;
+  authorDate: string;
+  url: string;
+}
+
 function splitLines(raw: string) {
   return raw
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function parseFrontMatter(raw: string) {
+  const match = raw.match(/^---\n([\s\S]*?)\n---\n?/);
+  const meta: Record<string, string> = {};
+  if (!match) return { meta, body: raw };
+  for (const line of match[1].split("\n")) {
+    const sep = line.indexOf(":");
+    if (sep <= 0) continue;
+    const key = line.slice(0, sep).trim();
+    const value = line.slice(sep + 1).trim();
+    meta[key] = value;
+  }
+  return { meta, body: raw.slice(match[0].length) };
+}
+
+function excerpt(raw: string, max = 220) {
+  const text = raw
+    .replace(/^# Original Body\s*/m, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function naverDocToLine(doc: NaverCafeDoc) {
+  const label = doc.title || `article ${doc.articleId || "unknown"}`;
+  const parts = [
+    label,
+    doc.category ? `게시판=${doc.category}` : "",
+    doc.articleId ? `articleId=${doc.articleId}` : "",
+    doc.sourceType ? `source=${doc.sourceType}` : "",
+    doc.url,
+  ].filter(Boolean);
+  return `${parts.join(" | ")} :: ${excerpt(doc.body)}`;
+}
+
+function commitToLine(commit: GitHubCommit) {
+  const shortSha = commit.sha.slice(0, 7);
+  const date = commit.authorDate ? commit.authorDate.slice(0, 10) : "date unknown";
+  const firstLine = commit.message.split("\n")[0] || "commit message empty";
+  return `${shortSha} | ${date} | ${firstLine} | ${commit.url}`;
 }
 
 function sourceBlock(label: string, lines: string[]) {
@@ -149,6 +206,10 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [naverRaw, setNaverRaw] = useState("");
   const [githubRaw, setGithubRaw] = useState("");
+  const [githubRepo, setGithubRepo] = useState("rlahi1022-cloud/mongglemongle");
+  const [githubSince, setGithubSince] = useState("");
+  const [githubUntil, setGithubUntil] = useState("");
+  const [githubLoading, setGithubLoading] = useState(false);
   const [environmentNotes, setEnvironmentNotes] = useState("");
   const [blockers, setBlockers] = useState("");
   const [concepts, setConcepts] = useState("");
@@ -166,6 +227,69 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   const sourceCounts: Record<SourceKind, number> = {
     naver: naverLines.length,
     github: githubLines.length,
+  };
+
+  const importNaverFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setError(null);
+    try {
+      const docs: NaverCafeDoc[] = [];
+      for (const file of Array.from(files)) {
+        const raw = await file.text();
+        const { meta, body } = parseFrontMatter(raw);
+        docs.push({
+          title: meta.title || file.name.replace(/\.md$/i, ""),
+          url: meta.url || "",
+          articleId: meta.articleId || "",
+          category: meta.category || "",
+          sourceType: meta.sourceType || "markdown-file",
+          body,
+        });
+      }
+      const imported = docs.map(naverDocToLine).join("\n");
+      setNaverRaw((prev) => [prev.trim(), imported].filter(Boolean).join("\n"));
+    } catch {
+      setError("네이버 Markdown 파일을 읽지 못했습니다.");
+    }
+  };
+
+  const importGithubCommits = async () => {
+    const repo = githubRepo.trim();
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+      setError("GitHub 저장소는 owner/repo 형식으로 입력해주세요.");
+      return;
+    }
+    setGithubLoading(true);
+    setError(null);
+    try {
+      const q = new URLSearchParams();
+      q.set("per_page", "30");
+      if (githubSince) q.set("since", new Date(githubSince).toISOString());
+      if (githubUntil) q.set("until", new Date(githubUntil).toISOString());
+      const resp = await fetch(`https://api.github.com/repos/${repo}/commits?${q}`);
+      if (!resp.ok) throw new Error(`GitHub API ${resp.status}`);
+      const payload = await resp.json() as Array<{
+        sha?: string;
+        html_url?: string;
+        commit?: {
+          message?: string;
+          author?: { date?: string };
+        };
+      }>;
+      const commits = payload.map<GitHubCommit>((item) => ({
+        sha: item.sha || "",
+        message: item.commit?.message || "",
+        authorDate: item.commit?.author?.date || "",
+        url: item.html_url || "",
+      }));
+      const imported = commits.map(commitToLine).join("\n");
+      setGithubRaw((prev) => [prev.trim(), imported].filter(Boolean).join("\n"));
+      if (commits.length === 0) setError("조건에 맞는 GitHub 커밋이 없습니다.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "GitHub 기록을 가져오지 못했습니다.");
+    } finally {
+      setGithubLoading(false);
+    }
   };
 
   const createDraft = () => {
@@ -284,16 +408,52 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
 
             <section className="space-y-2">
               <h3 className="text-sm font-bold">네이버 글 근거</h3>
+              <input
+                type="file"
+                accept=".md,text/markdown,text/plain"
+                multiple
+                onChange={(e) => importNaverFiles(e.target.files)}
+                className="text-sm"
+              />
               <Textarea
                 value={naverRaw}
                 onChange={(e) => setNaverRaw(e.target.value)}
                 rows={4}
-                placeholder="URL 또는 핵심 문장"
+                placeholder="네이버 카페 원문 추출기에서 저장한 .md 파일을 불러오거나 URL/핵심 문장을 입력"
               />
             </section>
 
             <section className="space-y-2">
               <h3 className="text-sm font-bold">GitHub 기록 근거</h3>
+              <div className="grid gap-2 sm:grid-cols-[1fr_120px_120px]">
+                <Input
+                  value={githubRepo}
+                  onChange={(e) => setGithubRepo(e.target.value)}
+                  placeholder="owner/repo"
+                  className="rounded-2xl"
+                />
+                <Input
+                  type="date"
+                  value={githubSince}
+                  onChange={(e) => setGithubSince(e.target.value)}
+                  className="rounded-2xl"
+                />
+                <Input
+                  type="date"
+                  value={githubUntil}
+                  onChange={(e) => setGithubUntil(e.target.value)}
+                  className="rounded-2xl"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={importGithubCommits}
+                disabled={githubLoading}
+                className="w-full rounded-2xl bg-white"
+              >
+                {githubLoading ? "불러오는 중..." : "GitHub 커밋 불러오기"}
+              </Button>
               <Textarea
                 value={githubRaw}
                 onChange={(e) => setGithubRaw(e.target.value)}
