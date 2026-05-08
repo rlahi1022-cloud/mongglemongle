@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { VisibilitySelect } from "@/components/ui/select-visibility";
 import { PostCard } from "@/components/PostCard";
 import { FriendsBox } from "@/components/FriendsBox";
+import { DevlogDraftDialog } from "@/components/DevlogDraftDialog";
 import {
   ApiError,
   posts,
@@ -21,6 +22,7 @@ export function FeedPage() {
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [devlogOpen, setDevlogOpen] = useState(false);
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -111,6 +113,14 @@ export function FeedPage() {
                   className="text-sm"
                 />
                 <div className="flex-1" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDevlogOpen(true)}
+                  className="rounded-2xl bg-white"
+                >
+                  개발일지
+                </Button>
                 <Button type="submit" disabled={posting || !body.trim()} className="rounded-2xl">
                   {posting ? "발행 중..." : "발행"}
                 </Button>
@@ -155,6 +165,14 @@ export function FeedPage() {
       <aside className="space-y-4">
         <FriendsBox />
       </aside>
+
+      {devlogOpen && (
+        <DevlogDraftDialog
+          selectedPosts={[]}
+          onClose={() => setDevlogOpen(false)}
+          onPublished={refresh}
+        />
+      )}
     </div>
   );
 }

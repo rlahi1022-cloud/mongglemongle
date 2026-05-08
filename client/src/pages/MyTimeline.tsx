@@ -65,18 +65,17 @@ export function MyTimelinePage() {
   };
 
   return (
-    <div className="space-y-5 max-w-3xl mx-auto">
-      <div className="cloud-card px-5 py-4">
-        <h1 className="text-2xl font-bold text-foreground">📓 내 글</h1>
-        <p className="text-foreground/70 text-sm mt-1">제목을 클릭하면 본문과 첨부 미디어, 댓글이 펼쳐집니다.</p>
-        <div className="mt-4 flex flex-wrap gap-2">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[180px_minmax(0,1fr)]">
+      <aside className="space-y-3 lg:sticky lg:top-24 lg:self-start">
+        <div className="cloud-card p-3">
+          <div className="px-2 pb-2 text-sm font-bold text-muted-foreground">내 글 보기</div>
           {(["all", "feed", "devlog"] as const).map((value) => (
             <button
               key={value}
               type="button"
               onClick={() => { setOpenId(null); setCategory(value); }}
               className={cn(
-                "rounded-2xl px-3 py-1.5 text-sm font-bold transition",
+                "mb-1 block w-full rounded-2xl px-3 py-2 text-left text-sm font-bold transition",
                 category === value ? "bg-primary text-primary-foreground" : "bg-white/80 hover:bg-secondary"
               )}
             >
@@ -84,96 +83,103 @@ export function MyTimelinePage() {
             </button>
           ))}
         </div>
-      </div>
-      {error && <div className="cloud-card text-sm text-destructive font-medium px-4 py-2">{error}</div>}
-      {items.length === 0 && !loading && (
-        <Card className="cloud-card">
-          <CardContent className="py-12 text-center text-muted-foreground">
-            아직 작성한 글이 없습니다.
-          </CardContent>
-        </Card>
-      )}
+      </aside>
 
-      <div className="space-y-2">
-        {items.map((p) => {
-          const open = openId === p.id;
-          if (open) {
-            return (
-              <PostCard
-                key={p.id}
-                postId={p.id}
-                authorId={p.user_id}
-                authorName="나"
-                title={p.title}
-                body={p.body}
-                visibility={p.visibility}
-                createdAt={p.created_at}
-                rightSlot={
-                  <>
-                    <Button size="sm" variant="ghost" className="rounded-2xl"
-                            onClick={(e) => { e.stopPropagation(); setEditing(p); }}>
-                      수정
-                    </Button>
-                    <Button size="sm" variant="ghost" className="rounded-2xl"
-                            onClick={(e) => { e.stopPropagation(); setOpenId(null); }}>
-                      접기
-                    </Button>
-                    <Button size="sm" variant="ghost" className="rounded-2xl text-destructive"
-                            onClick={(e) => { e.stopPropagation(); onDelete(p.id); }}>
-                      삭제
-                    </Button>
-                  </>
-                }
-              />
-            );
-          }
-          return (
-            <button
-              key={p.id}
-              onClick={() => setOpenId(p.id)}
-              className={cn(
-                "w-full text-left cloud-card px-4 py-3 flex items-center gap-3",
-                "hover:shadow-md transition-shadow"
-              )}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold truncate">
-                  {p.title || <span className="text-muted-foreground italic font-normal">제목 없음</span>}
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                  {p.body.slice(0, 60)}{p.body.length > 60 ? "..." : ""}
-                </div>
-              </div>
-              <div className="shrink-0 flex items-center gap-2 text-xs">
-                <span className={`px-2 py-0.5 rounded-full ${categoryBadge[p.category]}`}>
-                  {categoryLabel[p.category]}
-                </span>
-                <span className={`px-2 py-0.5 rounded-full ${visBadge[p.visibility] ?? "bg-slate-100"}`}>
-                  {visLabel[p.visibility] ?? p.visibility}
-                </span>
-                <span className="text-muted-foreground hidden sm:inline">{p.created_at.split(" ")[0]}</span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {cursor && (
-        <div className="text-center">
-          <Button variant="outline" className="rounded-2xl bg-white/80 backdrop-blur"
-                  onClick={() => load(cursor)} disabled={loading}>
-            {loading ? "..." : "더 불러오기"}
-          </Button>
+      <div className="mx-auto w-full max-w-3xl space-y-5">
+        <div className="cloud-card px-5 py-4">
+          <h1 className="text-2xl font-bold text-foreground">📓 내 글</h1>
+          <p className="text-foreground/70 text-sm mt-1">제목을 클릭하면 본문과 첨부 미디어, 댓글이 펼쳐집니다.</p>
         </div>
-      )}
+        {error && <div className="cloud-card text-sm text-destructive font-medium px-4 py-2">{error}</div>}
+        {items.length === 0 && !loading && (
+          <Card className="cloud-card">
+            <CardContent className="py-12 text-center text-muted-foreground">
+              아직 작성한 글이 없습니다.
+            </CardContent>
+          </Card>
+        )}
 
-      {editing && (
-        <EditPostDialog
-          initial={editing}
-          onClose={() => setEditing(null)}
-          onSaved={onSaved}
-        />
-      )}
+        <div className="space-y-2">
+          {items.map((p) => {
+            const open = openId === p.id;
+            if (open) {
+              return (
+                <PostCard
+                  key={p.id}
+                  postId={p.id}
+                  authorId={p.user_id}
+                  authorName="나"
+                  title={p.title}
+                  body={p.body}
+                  visibility={p.visibility}
+                  createdAt={p.created_at}
+                  rightSlot={
+                    <>
+                      <Button size="sm" variant="ghost" className="rounded-2xl"
+                              onClick={(e) => { e.stopPropagation(); setEditing(p); }}>
+                        수정
+                      </Button>
+                      <Button size="sm" variant="ghost" className="rounded-2xl"
+                              onClick={(e) => { e.stopPropagation(); setOpenId(null); }}>
+                        접기
+                      </Button>
+                      <Button size="sm" variant="ghost" className="rounded-2xl text-destructive"
+                              onClick={(e) => { e.stopPropagation(); onDelete(p.id); }}>
+                        삭제
+                      </Button>
+                    </>
+                  }
+                />
+              );
+            }
+            return (
+              <button
+                key={p.id}
+                onClick={() => setOpenId(p.id)}
+                className={cn(
+                  "w-full text-left cloud-card px-4 py-3 flex items-center gap-3",
+                  "hover:shadow-md transition-shadow"
+                )}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate">
+                    {p.title || <span className="text-muted-foreground italic font-normal">제목 없음</span>}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {p.body.slice(0, 60)}{p.body.length > 60 ? "..." : ""}
+                  </div>
+                </div>
+                <div className="shrink-0 flex items-center gap-2 text-xs">
+                  <span className={`px-2 py-0.5 rounded-full ${categoryBadge[p.category]}`}>
+                    {categoryLabel[p.category]}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full ${visBadge[p.visibility] ?? "bg-slate-100"}`}>
+                    {visLabel[p.visibility] ?? p.visibility}
+                  </span>
+                  <span className="text-muted-foreground hidden sm:inline">{p.created_at.split(" ")[0]}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {cursor && (
+          <div className="text-center">
+            <Button variant="outline" className="rounded-2xl bg-white/80 backdrop-blur"
+                    onClick={() => load(cursor)} disabled={loading}>
+              {loading ? "..." : "더 불러오기"}
+            </Button>
+          </div>
+        )}
+
+        {editing && (
+          <EditPostDialog
+            initial={editing}
+            onClose={() => setEditing(null)}
+            onSaved={onSaved}
+          />
+        )}
+      </div>
     </div>
   );
 }
