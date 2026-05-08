@@ -54,6 +54,7 @@ add_executable(mongglemonggle
     server/src/media/local_fs_storage.cpp
     server/src/media/minio_storage.cpp
     server/src/media/permissions.cpp
+    server/src/media/media_queue.cpp
     server/src/middleware/cors.cpp
     server/src/middleware/rate_limiter.cpp
     server/src/middleware/request_log.cpp
@@ -61,6 +62,7 @@ add_executable(mongglemonggle
     server/src/notifications/stream_hub.cpp
     server/src/posts/posts_service.cpp
     server/src/posts/snapshot_service.cpp
+    server/src/posts/snapshot_worker.cpp
     server/src/profile/profile_service.cpp
     server/src/router/routes.cpp
     server/src/router/auth_routes.cpp

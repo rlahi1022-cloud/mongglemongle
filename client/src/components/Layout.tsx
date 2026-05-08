@@ -64,7 +64,6 @@ export function Layout() {
             <NavLink to="/me/timeline" className={navClass}>내 글</NavLink>
             <NavLink to="/snapshot" className={navClass}>시점 복원</NavLink>
             <NavLink to="/search" className={navClass}>검색</NavLink>
-            <NavLink to="/devlogs" className={navClass}>개발일지</NavLink>
           </nav>
 
           <div className="flex-1" />
@@ -140,7 +139,6 @@ export function Layout() {
               <NavLink to="/me/timeline" className={mobileNavClass} onClick={() => setMenuOpen(false)}>내 글</NavLink>
               <NavLink to="/snapshot" className={mobileNavClass} onClick={() => setMenuOpen(false)}>시점 복원</NavLink>
               <NavLink to="/search" className={mobileNavClass} onClick={() => setMenuOpen(false)}>검색</NavLink>
-              <NavLink to="/devlogs" className={mobileNavClass} onClick={() => setMenuOpen(false)}>개발일지</NavLink>
               <NavLink to="/profile" className={mobileNavClass} onClick={() => setMenuOpen(false)}>프로필</NavLink>
               <button
                 onClick={async () => { setMenuOpen(false); await logout(); nav("/login"); }}

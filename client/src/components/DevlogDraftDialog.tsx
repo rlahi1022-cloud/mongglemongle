@@ -67,6 +67,14 @@ function excerpt(raw: string, max = 220) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
+function cleanCommitMessage(message: string) {
+  return message
+    .split("\n")[0]
+    .replace(/^Merge (branch|pull request)\s+/i, "병합: ")
+    .replace(/\s*\(#\d+\)\s*$/g, "")
+    .trim();
+}
+
 function naverDocToLine(doc: NaverCafeDoc) {
   const label = doc.title || `article ${doc.articleId || "unknown"}`;
   const parts = [
@@ -82,13 +90,13 @@ function naverDocToLine(doc: NaverCafeDoc) {
 function commitToLine(commit: GitHubCommit) {
   const shortSha = commit.sha.slice(0, 7);
   const date = commit.authorDate ? commit.authorDate.slice(0, 10) : "date unknown";
-  const firstLine = commit.message.split("\n")[0] || "commit message empty";
+  const firstLine = cleanCommitMessage(commit.message) || "commit message empty";
   return `${shortSha} | ${date} | ${firstLine} | ${commit.url}`;
 }
 
 function commitToSummary(commit: GitHubCommit) {
   const date = commit.authorDate ? commit.authorDate.slice(0, 10) : "날짜 미상";
-  const firstLine = commit.message.split("\n")[0] || "커밋 메시지 없음";
+  const firstLine = cleanCommitMessage(commit.message) || "커밋 메시지 없음";
   return `${date} ${firstLine}`;
 }
 
@@ -329,14 +337,14 @@ function buildReferenceNote(posts: FeedItem[], naverLines: string[], githubLines
     githubLines.length > 0 ? `참조 GitHub ${githubLines.length}개` : "",
   ].filter(Boolean);
   if (refs.length === 0) return "";
-  return `\n\n참고한 기록: ${refs.join(", ")}.`;
+  return `\n\n## 참고한 기록\n${refs.map((ref) => `- ${ref}`).join("\n")}`;
 }
 
 function naverEvidenceItems(docs: NaverCafeDoc[], rawLines: string[]) {
   if (docs.length > 0) {
     return docs.map((doc) => ({
       title: doc.title || `네이버 글 ${doc.articleId || ""}`.trim(),
-      summary: excerpt(doc.body, 180),
+      summary: excerpt(doc.body, 900),
       source: doc.url || doc.sourceType || "naver",
     }));
   }
@@ -350,7 +358,7 @@ function naverEvidenceItems(docs: NaverCafeDoc[], rawLines: string[]) {
 function githubEvidenceItems(commits: GitHubCommit[], rawLines: string[]) {
   if (commits.length > 0) {
     return commits.map((commit) => ({
-      title: commit.message.split("\n")[0] || "GitHub 기록",
+      title: cleanCommitMessage(commit.message) || "GitHub 기록",
       summary: commitToSummary(commit),
       source: "github",
     }));
@@ -699,7 +707,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
         title: title.trim() || (mode === "study" ? "공부형 개발일지" : "당일 개발 경험"),
         feed: selectedPosts.map((post) => ({
           title: post.title || "피드 글",
-          summary: excerpt(post.body, 180),
+          summary: excerpt(post.body, 700),
           source: "feed",
         })),
         naver: naverEvidenceItems(naverDocs, naverLines),

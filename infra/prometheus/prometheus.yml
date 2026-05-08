@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: monggle-backend
+    metrics_path: /metrics
+    static_configs:
+      # docker compose에서 host 네트워크 접근 — Linux는 host.docker.internal 매핑 필요.
+      # extra_hosts로 해결 (docker-compose.yml 참조).
+      - targets: ['host.docker.internal:8080']
+        labels:
+          service: monggle-backend

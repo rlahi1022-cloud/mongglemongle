@@ -64,7 +64,7 @@ AppConfig AppConfig::loadFromEnv() {
     c.aiHubBaseUrl      = envOr("MONGGLE_AI_HUB_BASE_URL", "http://127.0.0.1:9100");
     c.aiHubTimeout      = std::chrono::milliseconds(envOrI64("MONGGLE_AI_HUB_TIMEOUT_MS", 5000));
 
-    c.s3Endpoint        = envOr("MONGGLE_S3_ENDPOINT",   "http://127.0.0.1:9000");
+    c.s3Endpoint        = envOr("MONGGLE_S3_ENDPOINT",   "http://127.0.0.1:9002");
     c.s3Bucket          = envOr("MONGGLE_S3_BUCKET",     "monggle-media");
     c.s3AccessKey       = envOr("MONGGLE_S3_ACCESS_KEY", "monggle_admin");
     c.s3SecretKey       = envOr("MONGGLE_S3_SECRET_KEY", "monggle_dev_secret");

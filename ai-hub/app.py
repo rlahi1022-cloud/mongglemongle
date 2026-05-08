@@ -212,6 +212,10 @@ def _natural_list(items: List[str]) -> str:
     return ", ".join(items[:-1]) + f", 그리고 {items[-1]}"
 
 
+def _evidence_title(item: EvidenceItem, fallback: str) -> str:
+    return _clip(item.title or item.summary or fallback, 80)
+
+
 def _memo_items(raw: str) -> List[str]:
     out: List[str] = []
     for chunk in raw.replace("·", ",").replace("/", ",").split(","):
@@ -240,18 +244,10 @@ def _expand_next(raw: str, fallback: str) -> str:
     return _sentence(item, fallback)
 
 
-def _activity_summary(req: DevlogDraftRequest) -> str:
-    feed = _natural_list([item.title or item.summary for item in req.feed])
-    naver = _natural_list([item.title or item.summary for item in req.naver])
-    github = _natural_list([item.summary for item in req.github])
-    pieces = []
-    if feed:
-        pieces.append(f"피드에는 {feed}가 남아 있었다")
-    if naver:
-        pieces.append(f"네이버 글에서는 {naver}를 참고했다")
-    if github:
-        pieces.append(f"GitHub 기록은 {github} 흐름을 확인하는 근거로만 사용했다")
-    return ". ".join(pieces)
+def _work_topic(req: DevlogDraftRequest, fallback: str) -> str:
+    user_memos = _memo_items(req.concepts) + _memo_items(req.learnings) + _memo_items(req.blockers)
+    feed_titles = [item.title for item in req.feed]
+    return _first(user_memos + feed_titles, fallback)
 
 
 _DEFINITIONS = {
@@ -314,14 +310,14 @@ def _concept_paragraph(req: DevlogDraftRequest) -> str:
 
 
 def _reference_note(req: DevlogDraftRequest) -> str:
-    refs = []
+    refs: List[str] = []
     if req.feed:
-        refs.append(f"피드 글 {len(req.feed)}개")
+        refs.append(f"피드 글 {len(req.feed)}개: {_natural_list([_evidence_title(item, '피드 글') for item in req.feed])}")
     if req.naver:
-        refs.append(f"네이버 글 {len(req.naver)}개")
+        refs.append(f"네이버 글 {len(req.naver)}개: {_natural_list([_evidence_title(item, '네이버 글') for item in req.naver])}")
     if req.github:
-        refs.append(f"참조 GitHub {len(req.github)}개")
-    return f"\n\n참고한 기록: {', '.join(refs)}." if refs else ""
+        refs.append(f"GitHub 기록 {len(req.github)}개: {_natural_list([_evidence_title(item, 'GitHub 기록') for item in req.github])}")
+    return "\n\n## 참고한 기록\n" + "\n".join(f"- {ref}" for ref in refs) if refs else ""
 
 
 def _guard_note(req: DevlogDraftRequest) -> str:
@@ -333,23 +329,19 @@ def _guard_note(req: DevlogDraftRequest) -> str:
 @app.post("/devlog/draft", response_model=DevlogDraftResponse)
 def devlog_draft(req: DevlogDraftRequest) -> DevlogDraftResponse:
     title = _clean(req.title) or "개발일지"
-    feed_topics = [item.title or item.summary for item in req.feed]
-    naver_topics = [item.title or item.summary for item in req.naver]
-    github_topics = [item.summary for item in req.github]
 
     if req.mode == "study":
-        concept = _first(_memo_items(req.concepts) + feed_topics + naver_topics, "오늘 공부한 내용")
+        concept = _work_topic(req, "오늘 공부한 내용")
         learning = _expand_learning(req.learnings, "아직 배운 점을 짧게만 남겨 두어서, 다음 기록에서 예시와 함께 더 구체화해야 한다.")
         reflection = _sentence(_first(_memo_items(req.reflections), ""), "공부하면서 생긴 생각은 이어서 더 정리할 필요가 있다.")
         next_step = _expand_next(req.next_steps, "오늘 적은 개념이 실제 코드나 작업 흐름에서 어떻게 쓰이는지 더 확인해 보려고 한다.")
-        activity = _activity_summary(req)
         draft = f"""# {title}
 
 오늘은 {concept}을 주제로 공부했다. 짧게 남긴 기록을 다시 읽어보니, 단어를 외우는 것보다 그 개념이 왜 필요한지 정리하는 과정이 더 중요했다.
 
 {_concept_paragraph(req)}
 
-{activity + "." if activity else "참고 기록은 많지 않았지만, 오늘 적은 메모를 기준으로 이해한 부분과 부족한 부분을 나눠 보았다."}
+참고 자료는 배경으로만 확인하고, 본문에는 내가 직접 남긴 이해와 판단을 중심으로 정리했다.
 
 이번에 배운 점은 {learning}
 
@@ -362,16 +354,15 @@ def devlog_draft(req: DevlogDraftRequest) -> DevlogDraftResponse:
 {_guard_note(req)}{_reference_note(req)}
 """
     else:
-        work = _first(feed_topics + naver_topics + github_topics, "오늘 남긴 개발 기록")
+        work = _work_topic(req, "오늘 남긴 개발 기록")
         blocker = _sentence(_first(_memo_items(req.blockers), ""), "막혔던 부분은 아직 짧게만 남아 있어 정확한 원인까지는 단정하지 않았다.")
         learning = _expand_learning(req.learnings, "배운 점은 더 정리할 여지가 있어 다음 기록에서 코드나 상황과 함께 보강하려고 한다.")
         next_step = _expand_next(req.next_steps, "오늘 남긴 기록을 기준으로 다음 작업을 이어서 정리할 예정이다.")
-        activity = _activity_summary(req)
         draft = f"""# {title}
 
 오늘은 {work} 관련 작업을 진행했다. 기록을 다시 보니 작업 자체보다, 중간에 어떤 흐름으로 막히고 다시 확인했는지가 더 중요하게 남았다.
 
-{activity + "." if activity else "작업 근거가 많지는 않았기 때문에, 오늘은 사용자가 직접 남긴 메모를 중심으로만 정리했다."}
+참고 자료와 커밋 기록은 작업 흐름을 확인하는 용도로만 두고, 본문은 직접 적은 메모를 기준으로 정리했다.
 
 작업 환경은 {_sentence(req.environment, "따로 남긴 환경 메모가 없어 자세히 정리하지 못했다.")}
 

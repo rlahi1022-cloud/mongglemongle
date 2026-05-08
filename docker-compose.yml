@@ -11,8 +11,10 @@ services:
       MINIO_ROOT_PASSWORD: monggle_dev_secret
     command: ["server", "/data", "--console-address", ":9001"]
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # 웹 콘솔
+      # 호스트 9002로 매핑 — 다른 프로젝트가 9000을 점유해도 충돌 없음.
+      # 컨테이너 내부는 9000 그대로라 minio 자체 설정은 변경 불필요.
+      - "9002:9000"   # S3 API
+      - "9003:9001"   # 웹 콘솔
     volumes:
       - monggle_minio_data:/data
     healthcheck:
@@ -72,7 +74,42 @@ services:
       timeout: 3s
       retries: 20
 
+  # Prometheus — 백엔드 /metrics 스크랩.
+  # docker compose --profile observability up 으로 켤 때만 기동.
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: monggle-prometheus
+    restart: unless-stopped
+    profiles: [observability]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux에서 호스트 백엔드 접근
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - monggle_prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: monggle-grafana
+    restart: unless-stopped
+    profiles: [observability]
+    depends_on:
+      - prometheus
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: monggle_dev
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - monggle_grafana_data:/var/lib/grafana
+
 volumes:
   monggle_mariadb_data:
   monggle_redis_data:
   monggle_minio_data:
+  monggle_prometheus_data:
+  monggle_grafana_data:

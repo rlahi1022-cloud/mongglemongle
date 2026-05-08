@@ -9,6 +9,7 @@
 #include "monggle/comments/comments_service.h"
 #include "monggle/follows/follows_service.h"
 #include "monggle/media/local_fs_storage.h"
+#include "monggle/media/media_queue.h"
 #include "monggle/media/media_service.h"
 #include "monggle/media/minio_storage.h"
 #include "monggle/middleware/cors.h"
@@ -17,6 +18,7 @@
 #include "monggle/notifications/notifications_service.h"
 #include "monggle/posts/posts_service.h"
 #include "monggle/posts/snapshot_service.h"
+#include "monggle/posts/snapshot_worker.h"
 #include "monggle/profile/profile_service.h"
 #include "monggle/router/routes.h"
 
@@ -128,6 +130,14 @@ int main() {
             } else {
                 LOG_WARN << "[auth] refresh-token redis allowlist not healthy — DB-only";
             }
+
+            // 미디어 처리 큐 (Redis Stream). 영상 인코딩/썸네일 같은 무거운 작업을 비동기로
+            // 분리하기 위한 인프라. 실제 sync 처리 분기는 MediaService 내부에서 결정.
+            static monggle::MediaQueue mediaQueue;
+            mediaQueue.setRedis(rlRedis, "media:jobs", "media-workers", "monggle-c1");
+            if (mediaQueue.healthy()) {
+                LOG_INFO << "[media-queue] redis stream backend ready (key=media:jobs)";
+            }
         } catch (const std::exception& e) {
             LOG_WARN << "[ratelimit] redis backend init failed: " << e.what()
                      << " — using in-memory";
@@ -173,6 +183,16 @@ int main() {
         .setLogLevel(trantor::Logger::kInfo);
 
     LOG_INFO << "monggle server listening on " << cfg.httpHost << ":" << cfg.httpPort;
+
+    // 스냅샷 워커: drogon이 listener를 시작한 후(=DB 클라이언트 ready) 사이클을 시작.
+    // 60s 후 첫 사이클을 돌리도록 timer로 트리거하면 드로곤 event loop이 DB를 잡은 뒤 안전.
+    monggle::SnapshotWorker snapshotWorker;
+    drogon::app().getLoop()->runAfter(60.0, [&snapshotWorker]() {
+        LOG_INFO << "[snapshot-worker] starting (interval=1h, lookback=24h)";
+        snapshotWorker.start();
+    });
+
     drogon::app().run();
+    snapshotWorker.stop();
     return 0;
 }

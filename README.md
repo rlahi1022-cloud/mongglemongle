@@ -16,8 +16,8 @@
 
 핵심 어필 축 3가지:
 - **시점 복원** — 이벤트 소싱 + 스냅샷으로 임의 시점의 사용자 상태를 재구성.
-- **자원 설계** — 다층 캐시, in-process pub/sub, 백프레셔 워터마크를 명시적으로 설계.
-- **트래픽 처리** — 다중 사용자의 팬아웃·캐시 다층·미디어 다운로드 부하를 다룸.
+- **자원 설계** — L1/L2 캐시, Redis 장애 대응, 미디어 처리 경로를 코드로 구현.
+- **트래픽 처리** — Pull 기반 피드, 캐시 계층, 미디어 조회/다운로드 권한 처리를 다룸.
 
 → 자세한 설계: [docs/몽글몽글_기획.pdf](docs/몽글몽글_기획.pdf)
 → 어떻게 코드로 옮겼는지: [docs/DEVLOG.md](docs/DEVLOG.md)
@@ -54,27 +54,28 @@
 - 단방향 follow (`/users/{id}/follow` POST/DELETE)
 - 팔로워/팔로잉 목록 (`/me/followers`, `/me/following`)
 - **Pull 기반 피드** — 작성 시 fanout 없음, 읽을 때 SQL JOIN으로 본인 + 팔로우의 (public|friends) 글 합치기
-- **2계층 캐시 (L1 in-process + L2 Redis)** — 아래 [캐시 계층](#캐시-계층) 참조
+- **2계층 피드 캐시 (L1 in-process + L2 Redis)** — Redis 장애 시 L1-only로 동작
 
 ### 미디어
 - multipart 업로드 (`/posts/{id}/media`)
 - 이미지: OpenCV로 200/800 너비 비율 유지 JPEG, 썸네일 자동 생성
 - 영상: ffmpeg로 첫 프레임 PNG poster 생성 (원본은 인코딩 없이 보관)
+- 저장소: MinIO/S3 호환 백엔드와 로컬 FS 대체 경로 제공
 - **다운로드 정책 매트릭스**: `owner_only` / `followers` / `public_allowed` — visibility와 분리해서 운영
 
 ### 댓글 / 알림 / 차단
 - 댓글: `GET/POST /posts/{id}/comments`, `DELETE /comments/{id}` (본인 댓글만)
-- 알림: 댓글/팔로우 시 자동 생성, 미읽음 카운트, 전체 읽음 처리
+- 알림: 댓글/팔로우 시 자동 생성, 미읽음 카운트, 전체 읽음 처리, SSE 스트림(`/me/notifications/stream`)
 - 차단: 차단된 사용자의 글/팔로우/댓글 제외, 본인 또는 차단된 사용자만 해제
 
 ### 프로필
 - 아바타 업로드 → OpenCV로 정사각형 256×256 JPEG 변환 (`PUT /me/avatar`)
 - 표시 이름 변경 즉시 반영 (모든 카드/사이드바에 동기화)
 - 비밀번호 변경 (사전 확인 게이트 통과 시)
-- 공개 아바타 조회 (`GET /users/{id}/avatar`, 없으면 404 → 프론트는 첫 글자 fallback)
+- 공개 아바타 조회 (`GET /users/{id}/avatar`, 없으면 프론트에서 첫 글자 표시)
 
 ### 개발일지 (DevLog)
-- 피드 글을 **근거**로 선택해 개발일지 초안 생성
+- 피드 글을 **근거**로 선택해 개발일지 본문 생성
 - 네이버 카페 원문 추출기가 만든 Markdown 파일 다중 import → 근거 변환
 - GitHub 커밋 import (`owner/repo` 또는 URL + 날짜 범위)
 - 형식 선택: **공부형** (개념/배운 점/새롭게 느낀 점) 또는 **당일 개발 경험**
@@ -84,23 +85,24 @@
 ### 캐시 계층
 - **L1**: in-process `TtlCache` — `unordered_map` + `std::mutex`, 30s TTL
 - **L2**: Redis (`redis-plus-plus`, vcpkg manifest로 관리) — `SET ... EX`로 TTL 적재, prefix invalidate는 `SCAN` + `UNLINK`
-- 글 작성/수정/삭제 시 `feed:{userId}:` 접두로 작성자 본인 + 팔로워의 피드를 일괄 무효화
+- 글 작성 시 작성자 본인의 `feed:{userId}:` 캐시를 무효화하고, 팔로워 피드는 짧은 TTL로 자연 만료
 - **Graceful degradation**: Redis 다운 → L2가 자동으로 `healthy=false`로 떨어지고 L1 단독 모드 지속, `/readyz`의 `redis` 필드가 `down`으로 노출되지만 서비스는 끊기지 않음
 
 ### EventBus
 - in-process pub/sub — 동기 디스패치, subscriber 예외 격리
-- 토픽: `kPostCreated`, `kPostEdited`, `kPostDeleted`, `kMediaUploaded`, `kFollowAdded`, `kCommentAdded`
-- 워터마크(published 누적 수) 노출
+- 토픽 상수: `kPostCreated`, `kPostEdited`, `kPostDeleted`, `kMediaUploaded`, `kFollowAdded`, `kCommentAdded`
 
 ### AI 허브
 - Python FastAPI 서비스로 분리 (`ai-hub/app.py`)
 - 글 본문 임베딩 → `embeddings` 테이블 적재
 - 검색 시 LIKE 결과와 임베딩 유사도 결과 혼합
-- 모델 로드 실패 시 stub 임베딩 fallback (서비스 중단 X)
+- 개발일지 본문 생성 API 제공
+- 모델 로드 실패 시 대체 임베딩으로 서비스 지속
 
 ### 운영
 - `/healthz` — 프로세스 헬스
 - `/readyz` — DB + Redis ping (Redis 끊겨도 L1으로 동작 보장)
+- `/metrics` — Prometheus 텍스트 포맷의 HTTP/cache/ratelimit/redis 지표
 - 모든 응답에 액세스 로그 한 줄 (`monggle-access.log`)
 
 ---
@@ -113,10 +115,10 @@
 | 인증 | JWT RS256 (cpp-jwt), bcrypt (libxcrypt) |
 | DB | MariaDB (Drogon ORM, 트랜잭션) |
 | 캐시 | L1 in-process TTL + L2 Redis (redis-plus-plus, vcpkg) |
-| 미디어 | OpenCV (이미지 리사이즈/썸네일) + ffmpeg (영상 첫 프레임) |
+| 미디어 | OpenCV (이미지 리사이즈/썸네일) + ffmpeg (영상 첫 프레임) + MinIO/S3 호환 저장소 |
 | 클라이언트 | React + Vite + TypeScript + Tailwind + shadcn/ui |
 | 로컬 인프라 | Docker Compose (MariaDB + Redis + MinIO + AI Hub) |
-| 운영 인프라 | AWS RDS + ElastiCache + S3 + CloudFront (Terraform) |
+| 운영 인프라 | AWS RDS + ElastiCache + S3 + CloudFront Terraform 구성 |
 | AI 허브 | Python FastAPI + sentence-transformers (BGE-m3) |
 | 의존성 관리 | apt (시스템 라이브러리) + vcpkg manifest (redis-plus-plus) |
 
@@ -164,10 +166,10 @@
 
 | 영역 | 설명 |
 |---|---|
-| 좌측 사이드바 (흰색) | 마스코트 + 메뉴(피드/내 글/시점 복원/검색/개발일지) + 친구 박스 + 프로필(아바타 클릭으로 업로드) |
-| 본문 (저녁하늘 그라데이션 + 별) | 흰 구름 카드들이 떠 있는 형태 — 글, 미디어 미리보기, 시점 복원 슬라이더 |
+| 상단 내비게이션 | 마스코트 + 메뉴(피드/내 글/시점 복원/검색) + 알림 + 프로필 |
+| 본문 (저녁하늘 그라데이션 + 별) | 흰 구름 카드들이 떠 있는 형태 — 글, 미디어 미리보기, 시점 복원 화면 |
 | 로그인/회원가입 | 마스코트가 떠다니는(`animate-float`) 풀스크린 별밤 |
-| 개발일지 | 피드 글을 근거로 선택, 네이버 글/GitHub 기록/개발 환경 메모를 더해 공부형 또는 당일 개발 경험 초안을 생성하고 발행 |
+| 개발일지 | 피드 글을 근거로 선택, 네이버 글/GitHub 기록/개발 환경 메모를 더해 공부형 또는 당일 개발 경험 본문을 생성하고 발행 |
 
 ---
 
@@ -248,7 +250,7 @@ npm run dev               # → http://127.0.0.1:5173
 ### 글 / 이벤트 소싱
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/posts` | 글 작성 (10/min/user, 본문 ≤1000자) |
+| POST | `/posts` | 글 작성 (10/min/user, 피드 약 1000자, 개발일지 약 20000자) |
 | GET / PATCH / DELETE | `/posts/{id}` | 단건 조회 / 수정 / soft delete |
 | GET | `/me/timeline` | 본인 글 시간역순 (`category` 필터 지원) |
 | GET | `/users/{id}/timeline` | 타인 글 (visibility/follows 필터) |
@@ -268,7 +270,7 @@ npm run dev               # → http://127.0.0.1:5173
 | POST | `/posts/{id}/media` | multipart/form-data 업로드 (본인 글에만) |
 | GET | `/posts/{id}/media` | 첨부 미디어 목록 |
 | GET | `/media/{id}/view` | 원본 (visibility 체크) |
-| GET | `/media/{id}/download` | attachment (download_policy 체크) |
+| GET | `/media/{id}/download` | attachment 또는 presigned redirect (download_policy 체크) |
 | GET | `/media/{id}/thumb` | 썸네일 (사진=jpg, 영상=poster.png) |
 
 ### 프로필
@@ -278,7 +280,7 @@ npm run dev               # → http://127.0.0.1:5173
 | PATCH | `/me` | 표시 이름 변경 |
 | PATCH | `/me/password` | 비밀번호 변경 |
 | POST | `/me/verify-password` | 프로필 수정 전 비밀번호 확인 |
-| GET | `/users/{id}/avatar` | 공개 — 없으면 404 (프론트는 첫 글자 fallback) |
+| GET | `/users/{id}/avatar` | 공개 — 없으면 프론트에서 첫 글자 표시 |
 
 ### 댓글 / 알림 / 차단
 | Method | Path | 설명 |
@@ -287,6 +289,7 @@ npm run dev               # → http://127.0.0.1:5173
 | DELETE | `/comments/{id}` | 본인 댓글 삭제 |
 | GET | `/me/notifications` | 최근 알림 + 미읽음 수 |
 | POST | `/me/notifications/read` | 알림 전체 읽음 처리 |
+| GET | `/me/notifications/stream` | SSE 알림 스트림 |
 | POST / DELETE | `/users/{id}/block` | 차단 / 차단 해제 |
 | GET | `/me/blocks` | 차단 목록 |
 
@@ -295,6 +298,7 @@ npm run dev               # → http://127.0.0.1:5173
 |---|---|---|
 | GET | `/healthz` | 프로세스 헬스 |
 | GET | `/readyz` | DB + Redis ping (Redis 끊겨도 L1으로 동작) |
+| GET | `/metrics` | Prometheus 텍스트 지표 |
 | OPTIONS | `*` | CORS preflight (Vite/Next dev 허용) |
 
 ---
@@ -317,8 +321,27 @@ npm run dev               # → http://127.0.0.1:5173
 | `MONGGLE_MEDIA_STORAGE_ROOT` | `media` |
 | `MONGGLE_AI_HUB_BASE_URL` | `http://127.0.0.1:9100` |
 | `MONGGLE_AI_HUB_TIMEOUT_MS` | `5000` |
+| `MONGGLE_S3_ENDPOINT` | `http://127.0.0.1:9002` |
+| `MONGGLE_S3_BUCKET` | `monggle-media` |
+| `MONGGLE_S3_ACCESS_KEY` / `_SECRET_KEY` | `monggle_admin` / `monggle_dev_secret` |
+| `MONGGLE_S3_REGION` | `us-east-1` |
 | `MONGGLE_EMBEDDING_MODEL` | `BAAI/bge-m3` |
 | `MONGGLE_AI_STUB` | 비어 있음. `1`이면 AI Hub에서 stub 강제 |
+
+---
+
+## 기획서 구현 매핑
+
+| 기획서 축 | 코드 구현 |
+|---|---|
+| 시점 복원 | `post_events` 이벤트 소싱, `snapshots` 테이블, `SnapshotWorker`, `/me/snapshot` |
+| 의미 검색 | AI Hub 임베딩, `embeddings` 테이블, LIKE + cosine similarity 혼합 검색 |
+| 자원 설계 | L1 `TtlCache`, L2 `RedisCache`, `/readyz`, `/metrics`, Redis 장애 대응 |
+| 트래픽 처리 | Pull 기반 피드, cursor pagination, 피드 캐시, rate limiting |
+| 미디어 권한 | visibility와 `download_policy` 분리, view/download 권한 매트릭스 |
+| 커뮤니티 흐름 | follow/feed, comments, notifications, SSE, blocks |
+| 개발일지 작성 보조 | 피드/네이버/GitHub 근거 import, AI Hub 본문 생성, devlog category 분리 |
+| 운영 구성 | Docker Compose 로컬 인프라, AWS Terraform 구성, Prometheus 지표 |
 
 ---
 
