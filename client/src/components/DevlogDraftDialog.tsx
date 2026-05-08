@@ -118,6 +118,231 @@ function sourceBlock(label: string, lines: string[]) {
   return lines.map((line, idx) => `- ${label} ${idx + 1}: ${line}`).join("\n");
 }
 
+const CONCEPT_DEFINITIONS: Array<{ terms: string[]; label: string; definition: string }> = [
+  {
+    terms: ["react", "리액트"],
+    label: "React",
+    definition: "화면을 컴포넌트 단위로 나누고 상태 변화에 따라 UI를 다시 그리는 프론트엔드 라이브러리",
+  },
+  {
+    terms: ["vite"],
+    label: "Vite",
+    definition: "개발 서버와 번들링을 빠르게 처리하는 프론트엔드 빌드 도구",
+  },
+  {
+    terms: ["tailwind", "tailwind css"],
+    label: "Tailwind CSS",
+    definition: "미리 정의된 유틸리티 클래스를 조합해 화면 스타일을 빠르게 만드는 CSS 프레임워크",
+  },
+  {
+    terms: ["shadcn", "shadcn/ui"],
+    label: "shadcn/ui",
+    definition: "Radix UI와 Tailwind CSS 기반 컴포넌트를 프로젝트 코드 안에 가져와 커스터마이즈하는 UI 구성 방식",
+  },
+  {
+    terms: ["typescript", "타입스크립트"],
+    label: "TypeScript",
+    definition: "JavaScript에 정적 타입을 더해 컴파일 단계에서 타입 오류를 확인할 수 있게 하는 언어",
+  },
+  {
+    terms: ["drogon"],
+    label: "Drogon",
+    definition: "C++로 HTTP API 서버를 만들 수 있는 비동기 웹 프레임워크",
+  },
+  {
+    terms: ["mariadb", "mysql"],
+    label: "MariaDB",
+    definition: "관계형 데이터를 테이블과 SQL로 다루는 MySQL 계열 데이터베이스",
+  },
+  {
+    terms: ["docker compose", "compose"],
+    label: "Docker Compose",
+    definition: "여러 컨테이너 서비스를 하나의 설정 파일로 함께 실행하고 관리하는 도구",
+  },
+  {
+    terms: ["docker", "도커"],
+    label: "Docker",
+    definition: "애플리케이션과 실행 환경을 컨테이너로 묶어 일관되게 실행하게 해주는 플랫폼",
+  },
+  {
+    terms: ["jwt"],
+    label: "JWT",
+    definition: "사용자 인증 정보를 서명된 토큰 형태로 주고받는 방식",
+  },
+  {
+    terms: ["access token", "액세스 토큰"],
+    label: "Access Token",
+    definition: "API 요청에서 사용자를 증명하기 위해 짧은 시간 동안 사용하는 인증 토큰",
+  },
+  {
+    terms: ["refresh token", "리프레시 토큰"],
+    label: "Refresh Token",
+    definition: "access token이 만료됐을 때 새 토큰을 발급받기 위해 더 길게 보관하는 토큰",
+  },
+  {
+    terms: ["redis"],
+    label: "Redis",
+    definition: "캐시, 큐, 세션 저장소 등에 자주 쓰이는 인메모리 key-value 저장소",
+  },
+  {
+    terms: ["minio"],
+    label: "MinIO",
+    definition: "S3와 호환되는 API를 제공하는 오브젝트 스토리지 서버",
+  },
+  {
+    terms: ["s3"],
+    label: "S3",
+    definition: "파일 같은 객체 데이터를 버킷 단위로 저장하고 URL/API로 접근하는 오브젝트 스토리지",
+  },
+  {
+    terms: ["fastapi"],
+    label: "FastAPI",
+    definition: "Python으로 타입 힌트 기반 API 서버를 빠르게 만들 수 있는 웹 프레임워크",
+  },
+  {
+    terms: ["embedding", "embeddings", "임베딩"],
+    label: "임베딩",
+    definition: "텍스트나 데이터를 의미가 비교 가능한 숫자 벡터로 바꾸는 표현 방식",
+  },
+  {
+    terms: ["bge-m3", "bge"],
+    label: "BGE-m3",
+    definition: "검색과 의미 비교에 쓰기 좋은 다국어 텍스트 임베딩 모델",
+  },
+  {
+    terms: ["oauth"],
+    label: "OAuth",
+    definition: "비밀번호를 직접 공유하지 않고 외부 서비스 권한을 위임받는 인증/인가 방식",
+  },
+  {
+    terms: ["api"],
+    label: "API",
+    definition: "클라이언트와 서버 또는 프로그램 사이에서 정해진 규칙으로 기능과 데이터를 주고받는 인터페이스",
+  },
+  {
+    terms: ["cors"],
+    label: "CORS",
+    definition: "브라우저가 다른 출처의 서버에 요청할 때 허용 여부를 판단하는 보안 정책",
+  },
+  {
+    terms: ["migration", "마이그레이션"],
+    label: "마이그레이션",
+    definition: "데이터베이스 스키마나 데이터를 버전별로 안전하게 변경하는 작업",
+  },
+  {
+    terms: ["이벤트 소싱", "event sourcing"],
+    label: "이벤트 소싱",
+    definition: "현재 상태만 저장하지 않고 상태 변화 이벤트를 누적해 과거 시점의 상태를 재구성하는 설계 방식",
+  },
+  {
+    terms: ["스냅샷", "snapshot"],
+    label: "스냅샷",
+    definition: "이벤트를 처음부터 모두 재생하지 않도록 특정 시점의 상태를 저장해 복원 속도를 높이는 데이터",
+  },
+  {
+    terms: ["백프레셔", "backpressure"],
+    label: "백프레셔",
+    definition: "처리 속도보다 입력이 빠를 때 시스템이 과부하되지 않도록 입력량을 조절하는 흐름 제어 방식",
+  },
+  {
+    terms: ["팬아웃", "fanout"],
+    label: "팬아웃",
+    definition: "하나의 이벤트나 글을 여러 사용자 피드나 대상에게 퍼뜨리는 처리 방식",
+  },
+  {
+    terms: ["cache", "캐시"],
+    label: "캐시",
+    definition: "자주 쓰는 데이터를 더 빠른 저장소에 잠시 보관해 반복 조회 비용을 줄이는 방법",
+  },
+  {
+    terms: ["like"],
+    label: "LIKE 검색",
+    definition: "SQL에서 특정 문자열이 포함된 행을 찾는 기본적인 패턴 검색 방식",
+  },
+  {
+    terms: ["commit", "커밋"],
+    label: "커밋",
+    definition: "Git에서 코드 변경 내용을 하나의 기록 단위로 저장한 것",
+  },
+  {
+    terms: ["pull request", "pr"],
+    label: "Pull Request",
+    definition: "브랜치의 변경 내용을 검토하고 병합하기 위해 요청하는 GitHub 협업 단위",
+  },
+  {
+    terms: ["issue", "이슈"],
+    label: "이슈",
+    definition: "버그, 개선점, 작업 항목 등을 추적하기 위해 기록하는 관리 단위",
+  },
+  {
+    terms: ["opencv"],
+    label: "OpenCV",
+    definition: "이미지 처리와 컴퓨터 비전 기능을 제공하는 라이브러리",
+  },
+  {
+    terms: ["ffmpeg"],
+    label: "ffmpeg",
+    definition: "영상과 오디오를 변환하거나 분석하는 데 쓰이는 멀티미디어 도구",
+  },
+];
+
+function normalizeConceptText(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function extractUserConceptHints(raw: string) {
+  return raw
+    .split(/[\n,·/|]+/)
+    .map((item) => item.replace(/(을|를|이|가|은|는)?\s*(배웠어|배웠다|공부했다|정리했다|알게 됐다|알게됨)$/g, "").trim())
+    .filter((item) => meaningfulCharCount(item) >= 2)
+    .slice(0, 8);
+}
+
+function buildConceptMeaningSection(params: {
+  posts: FeedItem[];
+  naverLines: string[];
+  githubLines: string[];
+  concepts: string;
+  learnings: string;
+}) {
+  const { posts, naverLines, githubLines, concepts, learnings } = params;
+  const evidenceText = [
+    concepts,
+    learnings,
+    ...posts.flatMap((post) => [post.title, post.body]),
+    ...naverLines,
+    ...githubLines,
+  ].join("\n");
+  const normalized = normalizeConceptText(evidenceText);
+  const matched = CONCEPT_DEFINITIONS.filter((entry) =>
+    entry.terms.some((term) => normalized.includes(normalizeConceptText(term)))
+  );
+
+  const knownLabels = new Set(matched.map((entry) => normalizeConceptText(entry.label)));
+  const unknownHints = extractUserConceptHints(`${concepts}\n${learnings}`)
+    .filter((hint) => !matched.some((entry) => entry.terms.some((term) =>
+      normalizeConceptText(hint).includes(normalizeConceptText(term))
+    )))
+    .filter((hint) => !knownLabels.has(normalizeConceptText(hint)))
+    .slice(0, 4);
+
+  if (matched.length === 0 && unknownHints.length === 0) {
+    return `## 의미 추출과 개념 보강
+- 입력된 개념/배운 점에서 정의를 붙일 만한 명확한 기술 용어를 찾지 못함.
+- 새 정의가 필요하면 개념 이름을 구체적으로 적어 보강해야 함.`;
+  }
+
+  const knownLines = matched
+    .slice(0, 8)
+    .map((entry) => `- ${entry.label}: ${entry.definition}. 이번 기록에서는 "${entry.label}"를 배운 항목과 연결해 이해한 것으로 정리할 수 있음.`);
+  const unknownLines = unknownHints.map((hint) =>
+    `- ${hint}: 사용자가 배운 항목으로 적었지만, 근거만으로 정확한 정의를 단정하기 어려워 추가 확인이 필요함.`
+  );
+
+  return `## 의미 추출과 개념 보강
+${[...knownLines, ...unknownLines].join("\n")}`;
+}
+
 function postEvidence(posts: FeedItem[]) {
   if (posts.length === 0) return "- 피드 글: 선택된 글 없음";
   return posts
@@ -172,6 +397,8 @@ ${topicSeeds.length > 0
 
 ## 개념 정리
 ${concepts.trim() || "제공된 개념 메모가 없어 새 개념을 임의로 설명하지 않음"}
+
+${buildConceptMeaningSection({ posts, naverLines, githubLines, concepts, learnings })}
 
 ## 배운 점
 ${learnings.trim() || "제공된 배운 점 메모가 없어 구체적으로 단정하지 않음"}
@@ -547,7 +774,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
                   value={concepts}
                   onChange={(e) => setConcepts(e.target.value)}
                   rows={2}
-                  placeholder="정리한 개념"
+                  placeholder="정리한 개념. 예: 임베딩, Docker, JWT를 배웠어"
                 />
                 <Textarea
                   value={learnings}
