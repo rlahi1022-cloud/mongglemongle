@@ -1,9 +1,9 @@
-"""몽글몽글 AI 허브 — MVP stub.
+"""몽글몽글 AI 허브.
 
-기획 5장의 정석은 BGE-m3 (1024차원) 임베딩 + 외부 LLM 라우팅이지만, 모델
-다운로드/추론은 무거우므로 MVP 단계에서는 결정적인 해시 기반 64차원 벡터로
-대체. 인터페이스(POST /embed, GET /healthz)는 동일하게 유지하므로 후속에
-sentence-transformers 또는 자체 BGE-m3로 1줄 교체 가능.
+기본은 BGE-m3 임베딩 모델을 사용한다. 개발 환경에 sentence-transformers가
+없거나 모델 로드에 실패하면 기존 SHA-256 64차원 stub으로 자동 fallback한다.
+인터페이스(POST /embed, POST /compare, GET /healthz)는 고정되어 있어 C++
+백엔드는 모델 교체와 무관하게 같은 방식으로 호출한다.
 
 사용:
   docker compose up ai-hub
@@ -15,17 +15,43 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
+from functools import lru_cache
 from typing import List
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 
-app = FastAPI(title="monggle-ai-hub", version="0.1.0-stub")
+app = FastAPI(title="monggle-ai-hub", version="0.2.0")
 
 EMBED_DIM = 64
+DEFAULT_MODEL = os.getenv("MONGGLE_EMBEDDING_MODEL", "BAAI/bge-m3")
+FORCE_STUB = os.getenv("MONGGLE_AI_STUB", "").lower() in {"1", "true", "yes"}
 
-# ---- 모델 stub ----------------------------------------------------------------
+# ---- 모델 ---------------------------------------------------------------------
+
+@lru_cache(maxsize=1)
+def _model():
+    if FORCE_STUB:
+        return None
+    try:
+        from sentence_transformers import SentenceTransformer
+
+        return SentenceTransformer(DEFAULT_MODEL)
+    except Exception:
+        return None
+
+
+def _model_name() -> str:
+    return DEFAULT_MODEL if _model() is not None else "stub-sha256-64d"
+
+
+def _embed_dim() -> int:
+    model = _model()
+    if model is None:
+        return EMBED_DIM
+    return int(model.get_sentence_embedding_dimension() or 0)
 
 def _hash_embed(text: str, dim: int = EMBED_DIM) -> List[float]:
     """결정적이고 가벼운 stub 임베딩.
@@ -42,6 +68,14 @@ def _hash_embed(text: str, dim: int = EMBED_DIM) -> List[float]:
     return [x / norm for x in vec]
 
 
+def _real_embed(text: str) -> List[float]:
+    model = _model()
+    if model is None:
+        return _hash_embed(text)
+    vector = model.encode(text, normalize_embeddings=True)
+    return [float(x) for x in vector.tolist()]
+
+
 def _cosine(a: List[float], b: List[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a)) or 1.0
@@ -56,8 +90,8 @@ class EmbedRequest(BaseModel):
 
 
 class EmbedResponse(BaseModel):
-    model: str = "stub-sha256-64d"
-    dim: int = EMBED_DIM
+    model: str
+    dim: int
     vector: List[float]
 
 
@@ -74,15 +108,16 @@ class CompareResponse(BaseModel):
 
 @app.get("/healthz")
 def healthz() -> dict:
-    return {"status": "ok", "model": "stub-sha256-64d", "dim": EMBED_DIM}
+    return {"status": "ok", "model": _model_name(), "dim": _embed_dim(), "stub": _model() is None}
 
 
 @app.post("/embed", response_model=EmbedResponse)
 def embed(req: EmbedRequest) -> EmbedResponse:
-    return EmbedResponse(vector=_hash_embed(req.text))
+    vector = _real_embed(req.text)
+    return EmbedResponse(model=_model_name(), dim=len(vector), vector=vector)
 
 
 @app.post("/compare", response_model=CompareResponse)
 def compare(req: CompareRequest) -> CompareResponse:
-    sim = _cosine(_hash_embed(req.a), _hash_embed(req.b))
+    sim = _cosine(_real_embed(req.a), _real_embed(req.b))
     return CompareResponse(similarity=sim)

@@ -11,6 +11,7 @@ namespace monggle {
 
 class FollowsService;
 class BlocksService;
+class AiHubClient;
 
 enum class Visibility { Public, Friends, Private };
 enum class DownloadPolicy { OwnerOnly, Followers, PublicAllowed };
@@ -67,7 +68,8 @@ struct TimelinePage {
 class PostsService {
 public:
     explicit PostsService(std::shared_ptr<FollowsService> follows = nullptr,
-                          std::shared_ptr<BlocksService> blocks = nullptr);
+                          std::shared_ptr<BlocksService> blocks = nullptr,
+                          std::shared_ptr<AiHubClient> aiHub = nullptr);
 
     Result<Post> create(std::int64_t authorId, const CreatePostRequest& req);
 
@@ -88,7 +90,7 @@ public:
                                   int limit,
                                   std::optional<PostCategory> category = std::nullopt);
 
-    // 본인 글 키워드 검색 (FULLTEXT). MVP — 임베딩 검색은 AI 허브 후속.
+    // 본인 글 검색. LIKE 결과에 AI Hub 임베딩 유사도 결과를 섞는다.
     Result<std::vector<Post>> searchOwn(std::int64_t userId,
                                         const std::string& query,
                                         int limit);
@@ -96,6 +98,7 @@ public:
 private:
     std::shared_ptr<FollowsService> follows_;
     std::shared_ptr<BlocksService> blocks_;
+    std::shared_ptr<AiHubClient> aiHub_;
 };
 
 } // namespace monggle

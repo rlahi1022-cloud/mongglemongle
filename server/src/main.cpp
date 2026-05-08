@@ -1,4 +1,5 @@
 #include "monggle/app_config.h"
+#include "monggle/ai/ai_hub_client.h"
 #include "monggle/auth/auth_service.h"
 #include "monggle/auth/jwt_service.h"
 #include "monggle/blocks/blocks_service.h"
@@ -32,7 +33,17 @@ int main() {
     auto authService     = std::make_shared<monggle::AuthService>(jwtService);
     auto followsService  = std::make_shared<monggle::FollowsService>();
     auto blocksService   = std::make_shared<monggle::BlocksService>();
-    auto postsService    = std::make_shared<monggle::PostsService>(followsService, blocksService);
+    std::shared_ptr<monggle::AiHubClient> aiHubClient;
+    if (!cfg.aiHubBaseUrl.empty()) {
+        auto candidate = std::make_shared<monggle::AiHubClient>(cfg.aiHubBaseUrl, cfg.aiHubTimeout);
+        if (candidate->healthy()) {
+            aiHubClient = candidate;
+            LOG_INFO << "[ai-hub] enabled at " << cfg.aiHubBaseUrl;
+        } else {
+            LOG_WARN << "[ai-hub] unavailable at startup; semantic search disabled";
+        }
+    }
+    auto postsService    = std::make_shared<monggle::PostsService>(followsService, blocksService, aiHubClient);
     auto snapshotService = std::make_shared<monggle::SnapshotService>();
     auto mediaService    = std::make_shared<monggle::MediaService>(cfg.mediaStorageRoot, followsService, blocksService);
     auto profileService  = std::make_shared<monggle::ProfileService>(cfg.mediaStorageRoot);

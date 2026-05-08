@@ -1,4 +1,5 @@
 #include "monggle/posts/posts_service.h"
+#include "monggle/ai/ai_hub_client.h"
 #include "monggle/blocks/blocks_service.h"
 #include "monggle/follows/follows_service.h"
 
@@ -7,9 +8,14 @@
 #include <drogon/orm/Exception.h>
 
 #include <json/json.h>
+#include <json/reader.h>
 #include <json/writer.h>
 
+#include <algorithm>
+#include <cmath>
+#include <unordered_set>
 #include <sstream>
+#include <utility>
 
 namespace monggle {
 
@@ -121,11 +127,69 @@ void insertEvent(const drogon::orm::DbClientPtr& tx,
         userId, postId, eventType, serializeJson(payload));
 }
 
+Json::Value vectorToJson(const std::vector<float>& vector) {
+    Json::Value arr(Json::arrayValue);
+    for (float v : vector) arr.append(v);
+    return arr;
+}
+
+std::vector<float> parseVectorJson(const std::string& raw) {
+    Json::Value root;
+    Json::CharReaderBuilder builder;
+    std::string errs;
+    std::istringstream in(raw);
+    if (!Json::parseFromStream(builder, in, &root, &errs) || !root.isArray()) {
+        return {};
+    }
+    std::vector<float> out;
+    out.reserve(root.size());
+    for (const auto& value : root) {
+        if (!value.isNumeric()) return {};
+        out.push_back(value.asFloat());
+    }
+    return out;
+}
+
+float cosineSimilarity(const std::vector<float>& a, const std::vector<float>& b) {
+    if (a.empty() || b.empty() || a.size() != b.size()) return -1.0F;
+    double dot = 0.0;
+    double na = 0.0;
+    double nb = 0.0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        dot += static_cast<double>(a[i]) * static_cast<double>(b[i]);
+        na += static_cast<double>(a[i]) * static_cast<double>(a[i]);
+        nb += static_cast<double>(b[i]) * static_cast<double>(b[i]);
+    }
+    if (na <= 0.0 || nb <= 0.0) return -1.0F;
+    return static_cast<float>(dot / (std::sqrt(na) * std::sqrt(nb)));
+}
+
+std::optional<std::int64_t> storeEmbedding(const drogon::orm::DbClientPtr& tx,
+                                           AiHubClient* aiHub,
+                                           std::int64_t userId,
+                                           std::int64_t postId,
+                                           const std::string& text) {
+    if (!aiHub) return std::nullopt;
+    auto vector = aiHub->embed(text);
+    if (!vector || vector->empty()) return std::nullopt;
+
+    tx->execSqlSync("DELETE FROM embeddings WHERE post_id = ?", postId);
+    auto inserted = tx->execSqlSync(
+        "INSERT INTO embeddings (post_id, user_id, model_version, vector_json) "
+        "VALUES (?, ?, ?, ?)",
+        postId,
+        userId,
+        std::string("ai-hub"),
+        serializeJson(vectorToJson(*vector)));
+    return inserted.insertId();
+}
+
 } // namespace
 
 PostsService::PostsService(std::shared_ptr<FollowsService> follows,
-                           std::shared_ptr<BlocksService> blocks)
-    : follows_(std::move(follows)), blocks_(std::move(blocks)) {}
+                           std::shared_ptr<BlocksService> blocks,
+                           std::shared_ptr<AiHubClient> aiHub)
+    : follows_(std::move(follows)), blocks_(std::move(blocks)), aiHub_(std::move(aiHub)) {}
 
 Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest& req) {
     if (req.body.empty()) {
@@ -163,6 +227,10 @@ Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest
         payload["visibility"]      = toDbString(req.visibility);
         payload["download_policy"] = toDbString(req.downloadPolicy);
         insertEvent(tx, authorId, postId, kEventCreated, payload);
+
+        if (auto embeddingId = storeEmbedding(tx, aiHub_.get(), authorId, postId, req.title + "\n" + req.body)) {
+            tx->execSqlSync("UPDATE posts SET embedding_id = ? WHERE id = ?", *embeddingId, postId);
+        }
 
         auto rows = tx->execSqlSync(
             "SELECT id, user_id, title, category, body, visibility, download_policy, created_at, updated_at "
@@ -250,6 +318,12 @@ Result<Post> PostsService::update(std::int64_t authorId, std::int64_t postId,
         auto refreshed = tx->execSqlSync(
             "SELECT id, user_id, title, category, body, visibility, download_policy, created_at, updated_at "
             "FROM posts WHERE id = ?", postId);
+        if ((req.title || req.body) && refreshed.size() > 0) {
+            const auto p = rowToPost(refreshed[0]);
+            if (auto embeddingId = storeEmbedding(tx, aiHub_.get(), authorId, postId, p.title + "\n" + p.body)) {
+                tx->execSqlSync("UPDATE posts SET embedding_id = ? WHERE id = ?", *embeddingId, postId);
+            }
+        }
         return rowToPost(refreshed[0]);
     } catch (const drogon::orm::DrogonDbException& e) {
         return PostsError{PostsError::InternalError, e.base().what()};
@@ -292,18 +366,58 @@ Result<std::vector<Post>> PostsService::searchOwn(std::int64_t userId,
     }
     if (limit <= 0 || limit > 100) limit = 20;
     try {
-        // MariaDB는 한글 ngram FULLTEXT 미지원이라 MVP에서는 LIKE 사용.
-        // 운영 규모 도달 시 Elasticsearch/Meilisearch 또는 AI 임베딩 검색으로 대체.
+        std::vector<Post> out;
+        std::unordered_set<std::int64_t> seen;
+
+        if (aiHub_) {
+            if (auto queryVector = aiHub_->embed(query); queryVector && !queryVector->empty()) {
+                auto rows = db()->execSqlSync(
+                    "SELECT p.id, p.user_id, p.title, p.category, p.body, p.visibility, "
+                    "p.download_policy, p.created_at, p.updated_at, e.vector_json "
+                    "FROM posts p "
+                    "JOIN embeddings e ON e.id = p.embedding_id "
+                    "WHERE p.user_id = ? AND p.deleted_at IS NULL "
+                    "ORDER BY p.id DESC LIMIT 200",
+                    userId);
+
+                struct ScoredPost {
+                    Post post;
+                    float score;
+                };
+                std::vector<ScoredPost> scored;
+                scored.reserve(rows.size());
+                for (const auto& row : rows) {
+                    const auto candidateVector = parseVectorJson(row["vector_json"].as<std::string>());
+                    const float score = cosineSimilarity(*queryVector, candidateVector);
+                    if (score >= 0.25F) scored.push_back(ScoredPost{rowToPost(row), score});
+                }
+                std::sort(scored.begin(), scored.end(), [](const ScoredPost& a, const ScoredPost& b) {
+                    if (a.score == b.score) return a.post.id > b.post.id;
+                    return a.score > b.score;
+                });
+                for (const auto& item : scored) {
+                    if (static_cast<int>(out.size()) >= limit) break;
+                    if (seen.insert(item.post.id).second) out.push_back(item.post);
+                }
+            }
+        }
+
+        if (static_cast<int>(out.size()) >= limit) return out;
+
+        // MariaDB는 한글 ngram FULLTEXT 미지원이라 LIKE 결과를 함께 사용한다.
         std::string like = "%" + query + "%";
         auto rows = db()->execSqlSync(
             "SELECT id, user_id, title, category, body, visibility, download_policy, created_at, updated_at "
             "FROM posts "
-            "WHERE user_id = ? AND deleted_at IS NULL AND body LIKE ? "
+            "WHERE user_id = ? AND deleted_at IS NULL AND (title LIKE ? OR body LIKE ?) "
             "ORDER BY id DESC LIMIT ?",
-            userId, like, limit);
-        std::vector<Post> out;
-        out.reserve(rows.size());
-        for (const auto& row : rows) out.push_back(rowToPost(row));
+            userId, like, like, limit);
+        out.reserve(out.size() + rows.size());
+        for (const auto& row : rows) {
+            if (static_cast<int>(out.size()) >= limit) break;
+            auto post = rowToPost(row);
+            if (seen.insert(post.id).second) out.push_back(std::move(post));
+        }
         return out;
     } catch (const std::exception& e) {
         return PostsError{PostsError::InternalError, e.what()};

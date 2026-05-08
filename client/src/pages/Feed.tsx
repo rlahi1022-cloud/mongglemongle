@@ -79,9 +79,20 @@ export function FeedPage() {
       <div className="space-y-5 min-w-0">
         <Card className="cloud-card">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <span>☁️</span> 새 글
-            </CardTitle>
+            <div className="flex items-center gap-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <span>☁️</span> 새 글
+              </CardTitle>
+              <div className="flex-1" />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDevlogOpen(true)}
+                className="rounded-2xl border-sky-200 bg-sky-50 px-3 text-xs font-bold text-sky-700 hover:bg-sky-100"
+              >
+                개발일지 작성
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <form onSubmit={onPost} className="space-y-3">
@@ -105,22 +116,23 @@ export function FeedPage() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <VisibilitySelect value={visibility} onChange={setVisibility} />
+                <label
+                  htmlFor="media-input"
+                  className="inline-flex h-10 cursor-pointer items-center rounded-2xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-700 transition hover:bg-sky-100"
+                >
+                  파일 선택
+                </label>
                 <input
                   id="media-input"
                   type="file"
                   accept="image/*,video/*"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  className="text-sm"
+                  className="sr-only"
                 />
+                <span className="max-w-[220px] truncate text-sm text-muted-foreground">
+                  {file ? file.name : "선택된 파일 없음"}
+                </span>
                 <div className="flex-1" />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDevlogOpen(true)}
-                  className="rounded-2xl bg-white"
-                >
-                  개발일지
-                </Button>
                 <Button type="submit" disabled={posting || !body.trim()} className="rounded-2xl">
                   {posting ? "발행 중..." : "발행"}
                 </Button>

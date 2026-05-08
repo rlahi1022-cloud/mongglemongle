@@ -44,7 +44,7 @@
 | **클라이언트** | React 18 + Vite 5 + Tailwind 3 + shadcn/ui (TS) | |
 | **로컬 인프라** | Docker Compose (MariaDB + Redis + MinIO + AI Hub) | 백엔드는 아직 DB 중심 |
 | **운영 인프라(예정)** | AWS RDS + ElastiCache + S3 + CloudFront | Terraform 스켈레톤 |
-| **AI 허브** | Python FastAPI stub | MVP 검색은 LIKE |
+| **AI 허브** | Python FastAPI + sentence-transformers | BGE-m3 임베딩, 실패 시 stub fallback |
 
 ---
 
@@ -147,6 +147,8 @@ npm run dev               # → http://127.0.0.1:5173
 
 `개발일지` 메뉴에서 피드 글을 근거로 선택한 뒤 `개발일지 작성`을 누르면 사용자가 입력한 네이버 글 근거, GitHub 기록, 실제 개발 환경/작업감 메모를 바탕으로 개발일지 초안을 만들 수 있습니다. 네이버 카페 원문 추출기가 저장한 `.md` 파일은 여러 개 업로드해 근거로 변환할 수 있고, GitHub는 `owner/repo` 또는 GitHub URL과 날짜 범위를 입력해 최근 커밋을 불러올 수 있습니다. 형식은 `공부형`과 `당일 개발 경험` 중 선택하며, 공부형은 개념/배운 점/새롭게 느낀 점을 중심으로 구성합니다. 개발 환경 메모는 짧아도 되지만 의미가 확인되는 문장이어야 하며, 발행 시 피드 글처럼 `전체 공개` / `친구만` / `나만` 공개 범위를 직접 선택합니다. 개발일지는 일반 피드보다 긴 본문을 허용하고, 초안 생성기는 입력된 근거가 없는 성과나 작업을 단정하지 않도록 "과장 방지 체크" 섹션을 함께 생성합니다.
 
+AI Hub가 실행 중이면 글 작성/수정 시 본문 임베딩을 `embeddings` 테이블에 저장하고, 검색 화면에서는 LIKE 키워드 결과에 임베딩 유사도 결과를 함께 섞습니다. 기본 모델은 `BAAI/bge-m3`이며, 모델 로드가 실패하면 AI Hub 내부에서 64차원 stub 임베딩으로 fallback합니다.
+
 ---
 
 ## API 한눈에 (총 25개 엔드포인트)
@@ -220,7 +222,7 @@ npm run dev               # → http://127.0.0.1:5173
 |---|---|
 | S3/MinIO 직접 업로드 + 서명 URL | Compose에는 MinIO가 있으나 백엔드는 로컬 FS 사용 |
 | Redis L2 캐시 + Push fanout | Drogon RedisClient 이슈로 readyz Redis ping도 보류 |
-| AI 임베딩 검색 | AI Hub는 stub, 실제 검색은 LIKE |
+| AI 임베딩 검색 | BGE-m3 연결 및 검색 혼합 MVP 구현. 벡터 전용 DB/인덱스는 후속 |
 | 네이버/GitHub 자동 수집 | 네이버는 추출된 Markdown 파일 import, GitHub는 공개 커밋 import 지원. 비공개 repo/API 토큰 연동은 후속 |
 | 스냅샷 워커 | 시점 복원은 현재 이벤트를 처음부터 재생 |
 | 부하 테스트 / 운영 배포 | Terraform 스켈레톤만 있음 |
@@ -241,6 +243,10 @@ npm run dev               # → http://127.0.0.1:5173
 | `MONGGLE_JWT_ACCESS_TTL_SECONDS` | `900` (15m) |
 | `MONGGLE_JWT_REFRESH_TTL_SECONDS` | `1209600` (14d) |
 | `MONGGLE_MEDIA_STORAGE_ROOT` | `media` |
+| `MONGGLE_AI_HUB_BASE_URL` | `http://127.0.0.1:9100` |
+| `MONGGLE_AI_HUB_TIMEOUT_MS` | `5000` |
+| `MONGGLE_EMBEDDING_MODEL` | `BAAI/bge-m3` |
+| `MONGGLE_AI_STUB` | 비어 있음. `1`이면 AI Hub에서 stub 강제 |
 
 ---
 

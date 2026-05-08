@@ -27,6 +27,8 @@ services:
     build: ./ai-hub
     container_name: monggle-ai-hub
     restart: unless-stopped
+    environment:
+      MONGGLE_EMBEDDING_MODEL: BAAI/bge-m3
     ports:
       - "9100:9000"
     healthcheck:

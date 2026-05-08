@@ -23,6 +23,7 @@ add_executable(mongglemonggle
     server/src/auth/auth_service.cpp
     server/src/auth/jwt_service.cpp
     server/src/auth/password_service.cpp
+    server/src/ai/ai_hub_client.cpp
     server/src/event/event_bus.cpp
     server/src/blocks/blocks_service.cpp
     server/src/cache/ttl_cache.cpp
