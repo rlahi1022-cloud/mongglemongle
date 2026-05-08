@@ -113,11 +113,6 @@ function byteLength(value: string) {
   return new Blob([value]).size;
 }
 
-function sourceBlock(label: string, lines: string[]) {
-  if (lines.length === 0) return `- ${label}: 제공된 근거 없음`;
-  return lines.map((line, idx) => `- ${label} ${idx + 1}: ${line}`).join("\n");
-}
-
 const CONCEPT_DEFINITIONS: Array<{ terms: string[]; label: string; definition: string }> = [
   {
     terms: ["react", "리액트"],
@@ -298,7 +293,38 @@ function extractUserConceptHints(raw: string) {
     .slice(0, 8);
 }
 
-function buildConceptMeaningSection(params: {
+function splitMemoItems(raw: string) {
+  return raw
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function firstMeaningful(items: string[], fallback: string) {
+  return items.find((item) => meaningfulCharCount(item) >= 3) || fallback;
+}
+
+function sentence(value: string, fallback: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+  return /[.!?。]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+function buildReferenceNote(posts: FeedItem[], naverLines: string[], githubLines: string[]) {
+  const refs = [
+    posts.length > 0 ? `피드 글 ${posts.length}개` : "",
+    naverLines.length > 0 ? `네이버 글 ${naverLines.length}개` : "",
+    githubLines.length > 0 ? `참조 GitHub ${githubLines.length}개` : "",
+  ].filter(Boolean);
+  if (refs.length === 0) return "";
+  return `\n\n참고한 기록: ${refs.join(", ")}.`;
+}
+
+function buildDraftGuardNote() {
+  return "입력한 기록에서 확인하기 어려운 완료, 성능 개선, 문제 해결 여부는 단정하지 않았다.";
+}
+
+function buildConceptMeaningLines(params: {
   posts: FeedItem[];
   naverLines: string[];
   githubLines: string[];
@@ -327,46 +353,17 @@ function buildConceptMeaningSection(params: {
     .slice(0, 4);
 
   if (matched.length === 0 && unknownHints.length === 0) {
-    return `## 의미 추출과 개념 보강
-- 입력된 개념/배운 점에서 정의를 붙일 만한 명확한 기술 용어를 찾지 못함.
-- 새 정의가 필요하면 개념 이름을 구체적으로 적어 보강해야 함.`;
+    return [];
   }
 
   const knownLines = matched
     .slice(0, 8)
-    .map((entry) => `- ${entry.label}: ${entry.definition}. 이번 기록에서는 "${entry.label}"를 배운 항목과 연결해 이해한 것으로 정리할 수 있음.`);
+    .map((entry) => `${entry.label}는 ${entry.definition}이다`);
   const unknownLines = unknownHints.map((hint) =>
-    `- ${hint}: 사용자가 배운 항목으로 적었지만, 근거만으로 정확한 정의를 단정하기 어려워 추가 확인이 필요함.`
+    `${hint}는 배운 항목으로 남겼지만, 정확한 정의는 추가로 확인해야 한다`
   );
 
-  return `## 의미 추출과 개념 보강
-${[...knownLines, ...unknownLines].join("\n")}`;
-}
-
-function postEvidence(posts: FeedItem[]) {
-  if (posts.length === 0) return "- 피드 글: 선택된 글 없음";
-  return posts
-    .map((post, idx) => {
-      const title = post.title?.trim() || "제목 없음";
-      const body = post.body.trim().replace(/\s+/g, " ");
-      const excerpt = body.length > 140 ? `${body.slice(0, 140)}...` : body;
-      return `- 피드 글 ${idx + 1}: [${post.created_at}] ${title} - ${excerpt}`;
-    })
-    .join("\n");
-}
-
-function evidenceSection(posts: FeedItem[], naverLines: string[], githubLines: string[]) {
-  return `## 근거 자료
-${postEvidence(posts)}
-${sourceBlock("네이버 글", naverLines)}
-${sourceBlock("GitHub 기록", githubLines)}`;
-}
-
-function safetySection() {
-  return `## 과장 방지 체크
-- 위 초안은 선택된 피드 글, 입력된 네이버 글, 입력된 GitHub 기록, 사용자가 적은 환경 메모만 근거로 작성됨.
-- 성능 개선, 배포 완료, 버그 완전 해결처럼 근거가 필요한 표현은 입력 자료에 없으면 단정하지 않음.
-- 빠진 맥락이 있으면 초안에 새 사실을 추가하기보다 근거 자료를 먼저 보강해야 함.`;
+  return [...knownLines, ...unknownLines];
 }
 
 function buildStudyDraft(params: {
@@ -385,34 +382,43 @@ function buildStudyDraft(params: {
     .map((post) => post.title?.trim() || post.body.trim().split("\n")[0])
     .filter(Boolean)
     .slice(0, 4);
+  const conceptItems = splitMemoItems(concepts);
+  const learningItems = splitMemoItems(learnings);
+  const reflectionItems = splitMemoItems(reflections);
+  const nextItems = splitMemoItems(nextSteps);
+  const topic = firstMeaningful([...conceptItems, ...topicSeeds], "오늘 공부한 내용");
+  const conceptLines = buildConceptMeaningLines({ posts, naverLines, githubLines, concepts, learnings });
+  const conceptParagraph = conceptLines.length > 0
+    ? `개념을 정리하면, ${conceptLines.join(". ")}.`
+    : "개념 정의는 아직 충분히 정리되지 않아서, 오늘은 이해한 범위까지만 기록해 둔다.";
+  const learningParagraph = sentence(
+    firstMeaningful(learningItems, ""),
+    "배운 점은 아직 짧게 남아 있어, 다음 기록에서 예시와 함께 더 구체화해야 한다."
+  );
+  const reflectionParagraph = sentence(
+    firstMeaningful(reflectionItems, ""),
+    "새롭게 느낀 점은 아직 명확히 적지 않았지만, 공부하면서 생긴 생각을 이어서 정리할 필요가 있다."
+  );
+  const nextParagraph = sentence(
+    firstMeaningful(nextItems, ""),
+    "다음에는 오늘 적은 개념이 실제 코드나 작업 흐름에서 어떻게 쓰이는지 더 확인해 보려고 한다."
+  );
 
   return `# ${titleSeed}
 
-${evidenceSection(posts, naverLines, githubLines)}
+오늘은 ${topic}을 주제로 공부했다. 단순히 용어만 적어두기보다, 내가 이해한 범위에서 개념이 어떤 역할을 하는지 같이 정리해 보려고 했다.
 
-## 오늘 공부한 주제
-${topicSeeds.length > 0
-  ? topicSeeds.map((item) => `- ${item}`).join("\n")
-  : "- 입력된 근거에서 공부 주제를 단정할 수 없어 보강 필요"}
+${conceptParagraph}
 
-## 개념 정리
-${concepts.trim() || "제공된 개념 메모가 없어 새 개념을 임의로 설명하지 않음"}
+이번에 배운 점은 ${learningParagraph}
 
-${buildConceptMeaningSection({ posts, naverLines, githubLines, concepts, learnings })}
+공부하면서 느낀 점은 ${reflectionParagraph}
 
-## 배운 점
-${learnings.trim() || "제공된 배운 점 메모가 없어 구체적으로 단정하지 않음"}
+공부 환경과 흐름은 ${sentence(environmentNotes, "따로 남긴 환경 메모가 없어 자세히 정리하지 못했다.")}
 
-## 새롭게 느낀 점
-${reflections.trim() || "제공된 느낌 메모가 없어 감상이나 태도를 과장하지 않음"}
+다음에는 ${nextParagraph}
 
-## 공부 환경과 흐름
-${environmentNotes.trim()}
-
-## 더 확인할 것
-${nextSteps.trim() || "제공된 다음 학습 메모가 없어 임의로 확장하지 않음"}
-
-${safetySection()}
+${buildDraftGuardNote()}${buildReferenceNote(posts, naverLines, githubLines)}
 `;
 }
 
@@ -431,29 +437,33 @@ function buildDailyDraft(params: {
     .map((post) => post.title?.trim() || post.body.trim().split("\n")[0])
     .filter(Boolean)
     .slice(0, 4);
+  const workSummary = firstMeaningful(workedOn, "오늘 남긴 개발 기록");
+  const blockerParagraph = sentence(
+    firstMeaningful(splitMemoItems(blockers), ""),
+    "막혔던 부분은 아직 짧게만 남아 있어 정확한 원인까지는 단정하지 않았다."
+  );
+  const learningParagraph = sentence(
+    firstMeaningful(splitMemoItems(learnings), ""),
+    "배운 점은 더 정리할 여지가 있어 다음 기록에서 코드나 상황과 함께 보강하려고 한다."
+  );
+  const nextParagraph = sentence(
+    firstMeaningful(splitMemoItems(nextSteps), ""),
+    "다음 작업은 오늘 남긴 기록을 기준으로 이어서 정리할 예정이다."
+  );
 
   return `# ${titleSeed}
 
-${evidenceSection(posts, naverLines, githubLines)}
+오늘은 ${workSummary} 관련 작업을 진행했다. 기록을 다시 보니 작업 자체보다, 중간에 어떤 흐름으로 막히고 다시 확인했는지가 더 중요하게 남았다.
 
-## 오늘 실제로 다룬 작업
-${workedOn.length > 0
-  ? workedOn.map((item) => `- ${item}`).join("\n")
-  : "- 선택된 피드 글이나 명시된 작업 근거가 없어 작업 항목을 단정하지 않음"}
+작업 환경은 ${sentence(environmentNotes, "따로 남긴 환경 메모가 없어 자세히 정리하지 못했다.")}
 
-## 개발 환경과 작업감
-${environmentNotes.trim()}
+막혔던 부분은 ${blockerParagraph}
 
-## 막혔던 부분
-${blockers.trim() || "제공된 막힘 기록이 없어 구체적으로 단정하지 않음"}
+그 과정에서 배운 점은 ${learningParagraph}
 
-## 배운 점
-${learnings.trim() || "제공된 회고 메모가 없어 구체적으로 단정하지 않음"}
+다음에는 ${nextParagraph}
 
-## 다음 작업
-${nextSteps.trim() || "제공된 다음 작업 메모가 없어 임의로 확장하지 않음"}
-
-${safetySection()}
+${buildDraftGuardNote()}${buildReferenceNote(posts, naverLines, githubLines)}
 `;
 }
 
