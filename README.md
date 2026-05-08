@@ -16,7 +16,7 @@
 
 핵심 어필 축 3가지:
 - **시점 복원** — 이벤트 소싱 + 스냅샷으로 임의 시점의 사용자 상태를 재구성.
-- **자원 설계** — L1/L2 캐시, Redis 장애 대응, 미디어 처리 경로를 코드로 구현.
+- **자원 설계** — L1/L2 캐시, Redis 장애 시 서비스 지속, 미디어 처리 경로를 코드로 구현.
 - **트래픽 처리** — Pull 기반 피드, 캐시 계층, 미디어 조회/다운로드 권한 처리를 다룸.
 
 → 자세한 설계: [docs/몽글몽글_기획.pdf](docs/몽글몽글_기획.pdf)
@@ -53,8 +53,8 @@
 ### 친구 / 팔로우 / 피드
 - 단방향 follow (`/users/{id}/follow` POST/DELETE)
 - 팔로워/팔로잉 목록 (`/me/followers`, `/me/following`)
-- **Pull 기반 피드** — 작성 시 fanout 없음, 읽을 때 SQL JOIN으로 본인 + 팔로우의 (public|friends) 글 합치기
-- **2계층 피드 캐시 (L1 in-process + L2 Redis)** — Redis 장애 시 L1-only로 동작
+- **Pull 기반 피드** — 읽을 때 SQL JOIN으로 본인 + 팔로우의 (public|friends) 글 합치기
+- **2계층 피드 캐시 (L1 in-process + L2 Redis)** — Redis 장애 시 L1 캐시와 DB 경로로 서비스 지속
 
 ### 미디어
 - multipart 업로드 (`/posts/{id}/media`)
@@ -86,7 +86,7 @@
 - **L1**: in-process `TtlCache` — `unordered_map` + `std::mutex`, 30s TTL
 - **L2**: Redis (`redis-plus-plus`, vcpkg manifest로 관리) — `SET ... EX`로 TTL 적재, prefix invalidate는 `SCAN` + `UNLINK`
 - 글 작성 시 작성자 본인의 `feed:{userId}:` 캐시를 무효화하고, 팔로워 피드는 짧은 TTL로 자연 만료
-- **Graceful degradation**: Redis 다운 → L2가 자동으로 `healthy=false`로 떨어지고 L1 단독 모드 지속, `/readyz`의 `redis` 필드가 `down`으로 노출되지만 서비스는 끊기지 않음
+- Redis 장애 시 L2가 자동으로 `healthy=false`로 전환되고 L1 캐시와 DB 경로로 서비스 지속, `/readyz`의 `redis` 필드에 상태 노출
 
 ### EventBus
 - in-process pub/sub — 동기 디스패치, subscriber 예외 격리
@@ -97,7 +97,7 @@
 - 글 본문 임베딩 → `embeddings` 테이블 적재
 - 검색 시 LIKE 결과와 임베딩 유사도 결과 혼합
 - 개발일지 본문 생성 API 제공
-- 모델 로드 실패 시 대체 임베딩으로 서비스 지속
+- 모델 상태와 무관하게 대체 임베딩 경로로 서비스 지속
 
 ### 운영
 - `/healthz` — 프로세스 헬스
@@ -155,7 +155,7 @@
 │       ├── components/   Layout, PostCard, EditPostDialog, DevlogDraftDialog, FriendsBox, ...
 │       └── pages/        Login, Signup, Feed, MyTimeline, Snapshot, Search, Devlogs, Profile
 ├── infra/terraform/      ← AWS RDS/ElastiCache/S3/CloudFront 모듈
-├── tests/                ← C++ 테스트 스켈레톤
+├── tests/                ← C++ 검증 코드
 ├── scripts/gen_dev_jwt_keys.sh
 └── CMakeLists.txt
 ```

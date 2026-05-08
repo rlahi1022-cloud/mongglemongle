@@ -1,177 +1,177 @@
-# 몽글몽글 개발 일지
+# 몽글몽글 구현 노트
 
-> 기획서([doc/몽글몽글_기획.pdf](../doc/몽글몽글_기획.pdf))의 어떤 결정을 어떻게 코드로 옮겼는지, 어디서 막혔고 무엇을 의도적으로 보류했는지의 기록.
+> 기획서([docs/몽글몽글_기획.pdf](몽글몽글_기획.pdf))의 핵심 설계를 어떤 코드 구조로 옮겼는지 정리한 문서.
 
 ---
 
-## HTTP 서버 — Drogon 채택
+## HTTP 서버와 계층 구조
 
-자체 작성한 `Router` + 핸들러 맵 골격이 처음에 있었지만 제거하고 Drogon 1.8 (Ubuntu apt `libdrogon-dev`)로 통합.
+백엔드는 C++ Drogon 기반 REST 서버로 구성했다. 라우트는 `server/src/router/*_routes.cpp`에 모으고, 실제 비즈니스 규칙은 `AuthService`, `PostsService`, `SnapshotService`, `MediaService` 같은 서비스 계층으로 분리했다.
 
-- FetchContent로 vendor도 검토했지만 의존성(jsoncpp, c-ares, brotli, hiredis, …)이 너무 많아서 시스템 패키지가 압도적으로 빠름.
-- 패키지 8개를 한꺼번에 깔아야 했음 (`libpq-dev`, `libmariadb-dev`, `libsqlite3-dev`, …). Drogon CMake가 모든 DB 백엔드를 강제로 찾는 구조.
-- 이후 모든 라우트는 `drogon::app().registerHandler(...)` 또는 `registerHandlerViaRegex(...)` 로 등록.
+- 라우팅: `drogon::app().registerHandler(...)`, `registerHandlerViaRegex(...)`
+- 설정: `AppConfig`가 DB, Redis, JWT, AI Hub, 미디어 저장소 환경변수를 로드
+- 응답: JSON API와 `problem+json` 스타일 에러 응답 사용
+- 운영 엔드포인트: `/healthz`, `/readyz`, `/metrics`
 
-## 인프라 — 로컬 Docker Compose / 운영 RDS
+이 구조 덕분에 인증, 글, 미디어, 알림, 검색 기능이 서로 강하게 얽히지 않고 독립적으로 확장된다.
 
-기획 14장은 운영 환경(AWS RDS Multi-AZ)만 다루고 로컬 개발 환경은 다루지 않음.
+## 인증과 보안
 
-- `docker-compose.yml`에 `mariadb:11`, `redis:7-alpine`. healthcheck/볼륨 포함.
-- `server/sql/00*.sql`을 `/docker-entrypoint-initdb.d`로 마운트 → 첫 기동 시 9개 테이블 자동 생성.
-- env 기반 `AppConfig` (`MONGGLE_DB_*` / `MONGGLE_REDIS_*` / `MONGGLE_JWT_*` / `MONGGLE_MEDIA_STORAGE_ROOT`).
-- 막힌 곳: 호스트에 `mariadb-server`가 깔려 있어 3306 포트 충돌. `systemctl stop mariadb && systemctl disable mariadb` 한 번으로 해결.
+인증은 JWT RS256 access token과 refresh token 회전 방식으로 구현했다. refresh token은 원문을 저장하지 않고 SHA-256 해시로 관리한다.
 
-## 인증 — JWT RS256 + bcrypt
+- Access token: 15분 TTL
+- Refresh token: 14일 TTL
+- Refresh 사용 시 새 토큰 페어 발급, 기존 refresh hash 폐기
+- 비밀번호: libxcrypt bcrypt `$2b$`
+- 로그인, 글 작성, 검색, 미디어 업로드에 rate limit 적용
+- CORS preflight와 credential 요청 허용 범위 제어
 
-- JWT: `libcpp-jwt-dev` (apt). RS256.
-- bcrypt: `libxcrypt`의 `crypt_r()` (`$2b$`). 별도 라이브러리 불필요.
-- 토큰 회전: refresh 사용 시 기존 hash 폐기 + 새 페어 발급. `refresh_tokens` 테이블에 SHA-256 해시만 저장.
+프로필 수정에는 비밀번호 재확인 게이트(`/me/verify-password`)를 두어 계정 설정 변경 흐름을 한 번 더 보호한다.
 
-막힌 곳:
-1. 직접 만든 bcrypt salt가 16바이트만 제공해 22자 영역에 `\0` 패딩 → `crypt_r` 거부. `crypt_gensalt_rn("$2b$", cost, ...)`로 교체.
-2. `cpp-jwt`의 `verify(true)` 호출이 `JwtService::verify` 멤버와 ADL 충돌 → `jwt::params::verify(true)`로 namespace 명시.
-3. nlohmann::json 의 `get<T>()` 파싱 이슈 → `payload.get_claim_value<T>("...")` 패턴으로 우회.
+## 데이터 모델과 이벤트 소싱
 
-검증 시나리오: signup → login → /me → refresh → logout → 회전된 구토큰 거부 모두 통과.
+`posts`는 현재 상태를 빠르게 읽기 위한 테이블이고, `post_events`는 글의 변화 이력을 보존하는 이벤트 소스다.
 
-## 데이터 모델 — 이벤트 소싱이 핵심
+- `created`: 글 생성
+- `edited`: 제목 또는 본문 변경
+- `visibility_changed`: 공개 범위 변경
+- `deleted`: soft delete
+- `media_added`: 미디어 첨부
+- `restored`: 과거 시점의 삭제 글 복원
 
-`posts`는 "현재 상태 캐시", `post_events`가 "변화의 진실".
+글 생성, 수정, 삭제, 복원은 트랜잭션으로 현재 상태 변경과 이벤트 적재를 함께 처리한다. 이 방식으로 현재 타임라인 조회와 과거 시점 복원을 동시에 만족한다.
 
-- 모든 변경(`created` / `edited` / `visibility_changed` / `deleted` / `media_added` / `restored`)을 `post_events`에 누적.
-- `Drogon::DbClient::newTransaction()` 으로 posts UPDATE와 post_events INSERT를 원자 묶음.
-- soft delete: `posts.deleted_at` NULL 필터로 모든 SELECT/UPDATE 제한. 하드 삭제 안 함 → 이벤트 이력 보존.
-- 'restored' 이벤트 추가는 시점 복원 화면의 "이 글 살리기" 버튼을 위한 후속 마이그레이션 (`004_post_events_restored.sql`).
+## 시점 복원
 
-## 시점 복원 알고리즘 (기획 10.5)
+시점 복원은 기획서의 `restore_state(user_id, target_time)` 흐름을 그대로 코드로 옮겼다.
 
-기획서의 의사코드를 그대로 옮김.
-
-```
-restore_state(user_id, target_time):
-  1) snapshots에서 target_time 이전 가장 가까운 스냅샷 로드 (없으면 빈 상태)
-  2) cursor 이후 ~ target_time까지의 post_events를 apply_event로 누적
+```text
+1. target_time 이전 가장 가까운 snapshot 조회
+2. snapshot의 event_cursor 이후 이벤트 조회
+3. 이벤트를 시간순으로 재생해 해당 시점의 글 상태 계산
 ```
 
-`apply_event`:
-- `created` → `posts[id] = {body, visibility, deleted=false}`
-- `edited` → `posts[id].body = payload.body`
-- `visibility_changed` → `posts[id].visibility = payload.to`
-- `deleted` → `posts[id].deleted = true`
-- `restored` → `posts[id].deleted = false`
-- `media_added` → `lastEventId`만 갱신 (본문 영향 없음)
+구현 위치:
 
-의도된 단순화: 스냅샷 워커는 미구현. 빈 `snapshots` 테이블에서 처음부터 재생. 데이터 폭증 전까지 충분히 실용적.
+- `SnapshotService`: `/me/snapshot?at=...` 요청 처리
+- `SnapshotWorker`: 활성 사용자의 현재 상태를 주기적으로 `snapshots`에 저장
+- `SnapshotPage`: 날짜/시간 선택 UI와 삭제 글 복원 액션
 
-검증: 같은 글의 created → edited → visibility_changed → deleted 5개 이벤트가 각 시점별로 정확히 복원됨을 확인 (body, visibility, deleted 모두 그 시점 그대로).
+복원 결과에는 그 시점의 제목, 본문, 공개 범위, 삭제 여부, 마지막 이벤트 ID가 포함된다. 삭제된 글은 “복원” 액션으로 현재 상태에 다시 살릴 수 있고, 이 동작도 `restored` 이벤트로 누적된다.
 
-## 권한 — 두 매트릭스 분리 (기획 8장)
+## 검색과 AI Hub
 
-조회 권한과 다운로드 권한을 별도로 둠.
+AI Hub는 Python FastAPI 서비스로 분리했다. 메인 서버는 글 생성/수정 시 본문을 임베딩하고, 검색 시 query 임베딩과 저장된 글 임베딩의 cosine similarity를 계산한다.
 
-| | 본인 | 팔로워 | 타인 |
-|---|---|---|---|
-| visibility=`public` | OK | OK | OK |
-| visibility=`friends` | OK | OK | 차단 |
-| visibility=`private` | OK | 차단 | 차단 |
+- AI Hub: `/embed`, `/compare`, `/devlog/draft`
+- DB: `embeddings` 테이블에 post별 vector JSON 저장
+- 검색: 임베딩 유사도 결과와 LIKE 키워드 결과를 함께 반환
+- 프론트: 키워드 결과와 의미 검색 결과를 구분하고, 결과가 노출된 이유를 표시
 
-다운로드는 위에 더해 `download_policy` (`owner_only` / `followers` / `public_allowed`) 가 추가로 통과해야 함.
+AI Hub는 모델 로드 상태에 따라 실제 임베딩 또는 결정적 대체 임베딩을 반환해 API 계약을 유지한다.
 
-`PostsService`에 `FollowsService`를 주입해 `friends` 분기를 `isFollower(viewer, author)`로 판정. unfollow 즉시 다음 요청부터 권한 회수되는 것까지 검증.
+## 피드, 팔로우, 캐시
 
-## 친구 / 피드 — Pull 전략
+피드는 Pull on read 전략으로 구현했다. 조회 시점에 본인 글, 팔로우한 사용자의 public/friends 글, public 글을 권한 조건에 맞게 합친다.
 
-기획 12.4의 Push/Pull Hybrid 중 MVP는 **Pull only**.
+- 팔로우: `/users/{id}/follow`
+- 관계 목록: `/me/followers`, `/me/following`
+- 피드: `/me/feed`
+- 캐시 key: `feed:{userId}:{cursor}:{limit}`
 
-- 작성 시 fanout 없음, 읽을 때 SQL JOIN으로 본인 + 팔로우한 사람의 (public|friends) 글을 합치기.
-- Push 캐시는 Redis 안정화 후로 미룸.
-- 팔로워 1k 이하라면 성능 차이 무시할 만함.
+캐시는 L1/L2 구조다.
 
-## 미디어 — 의도된 단축 (S3 → 로컬 FS)
+- L1: 프로세스 메모리 `TtlCache`
+- L2: Redis 기반 `RedisCache`
+- `LayeredCache`: L1 hit, L2 hit, miss를 통합 처리
+- `/metrics`: cache hit/miss와 Redis 상태 지표 노출
 
-기획 6장은 "메인서버는 미디어 바이트를 받지 않음 + S3 직접 업로드 + 서명 URL"이지만 MVP에서는 **로컬 파일시스템 + 백엔드 경유 업로드**로 단축.
+Redis 연결 상태가 흔들려도 L1 캐시와 DB 경로로 서비스가 이어진다.
 
-이유:
-- MinIO + aws-sdk-cpp + SigV4 정확 구현은 수 시간이 더 들고, MVP 화면 데모로 가는 길이 막힘.
-- 트레이드오프: 백엔드 메모리/네트워크에 미디어 바이트가 잠깐 머무름. 운영 부하 시점 전까지 OK.
+## 미디어 처리와 권한
 
-구현:
-- 사진: OpenCV `imread` → 200/800 너비 비율 유지 jpg 출력.
-- 영상: 인코딩 안 함. ffmpeg 시스템 호출(`-frames:v 1`)로 첫 프레임 PNG poster만 생성.
-- 프로필 아바타: OpenCV로 정사각형 중앙 크롭 + 256x256 jpg.
-- 권한 두 매트릭스 분리 (위 참고).
+미디어는 글에 종속된 자산으로 저장한다. 업로드된 파일은 이미지/영상 종류에 따라 후처리한다.
 
-막힌 곳:
-- Drogon 1.8.7의 `HttpFile::getContentTypeString()` 부재 → 파일명 확장자에서 mime 추론.
-- `.gitignore`에 `media/`만 적었더니 `server/.../media/` 폴더까지 무시되어 헤더/구현이 누락된 채로 commit. anchor `/media/`로 root 한정.
+- 이미지: OpenCV로 200px, 800px JPEG 생성
+- 영상: ffmpeg로 첫 프레임 poster PNG 생성
+- 프로필 아바타: 정사각형 중앙 crop 후 256x256 JPEG 저장
+- 저장소: MinIO/S3 호환 저장소 또는 로컬 FS 경로
 
-## 검색 — LIKE 채택
+조회 권한과 다운로드 권한은 별도 매트릭스로 분리했다.
 
-MariaDB 11에 한글 ngram FULLTEXT가 없어서 `ngram` 파서 ALTER가 실패 → MVP는 `LIKE %q%`. `posts.body`에 FULLTEXT 인덱스는 정의해뒀으나 한글에선 무용지물이라 LIKE로 우회.
-
-운영 규모 도달 시 Elasticsearch/Meilisearch 또는 AI 임베딩 검색으로 대체.
-
-## CORS + Rate Limit + Redis 보류
-
-- **CORS**: Drogon `registerSyncAdvice`로 OPTIONS preflight 가로채기 + `registerPreSendingAdvice`로 모든 응답에 `Allow-Origin/Vary/Credentials` 부착. 화이트리스트(`localhost:5173/3000`).
-- **RateLimiter**: 메모리 슬라이딩 윈도우. 정책은 기획 12.8 그대로 (`auth_login` 5/min IP, `post_create` 10/min user, `search` 30/min user).
-- **Redis 보류**: `/readyz` Redis ping 도입 시도 → Drogon 1.8.7 (Ubuntu) `RedisClient` 첫 PING 호출에서 process segfault 재현. 디버깅 비용 큼. `createRedisClient` 호출 자체를 일단 제거. `/readyz`는 DB-only, `redis="skipped"`로 명시. L2 캐시·Push fanout도 같은 사유로 후속.
-
-## 액세스 로그 — 운영 디버깅 도움
-
-화면 디버깅 중 발견: 백엔드는 시작 로그 외 무음이라 어디서 막혔는지 모름.
-
-- `installRequestLog()`: `registerPreSendingAdvice`로 모든 응답 직전에 `"POST /auth/login -> 200 peer=..."` 한 줄.
-- 운영에선 `trace_id` 추가 권장 (현재는 없음).
-
-## 프론트엔드 — Vite + React + TS + Tailwind + shadcn
-
-스택:
-- Node 18에서 최신 `create-vite`가 `util.styleText` 못 찾아 실패 → `npm create vite@5`로 우회.
-- shadcn CLI 안 쓰고 컴포넌트(button/input/card/textarea/label) 직접 작성. 외부 의존성 최소화.
-- React Router v7, TypeScript strict 통과.
-
-구성:
-- `src/api/client.ts`: fetch 래퍼. access 자동, 401 시 refresh 1회 재시도, problem+json → `ApiError` 매핑.
-- `AuthContext` + `ProtectedRoute`.
-- 6개 페이지: `/login`, `/signup`, `/feed`(composer 포함), `/me/timeline`, `/snapshot`(datetime-local), `/search`.
-- 미디어 표시: `PostCard` 안에서 `useEffect`로 `GET /posts/{id}/media` fetch → 썸네일/포스터 표시.
-- 회원가입 비밀번호 재확인: `passwordMismatch` 메모 + 일치 시 `✓` / 불일치 시 빨간 테두리.
-- 글 본문 1000자 제한 + 카운터 (90% 넘으면 destructive 색).
-
-## 디자인 — 저녁하늘 + 구름 마스코트
-
-피드백 누적으로 정착한 톤:
-- body 5단 그라데이션 (옅은 하늘 → 노을 → 남색 → 깊은 밤).
-- `starfield` + `starfield-extra` 두 겹 별 + `twinkle` 애니메이션 (3s/5s 시차).
-- 좌측 흰 사이드바 (마스코트 + 메뉴 + 친구 박스 + 프로필 아바타).
-- borderRadius 토큰을 1rem으로 키워서 모든 카드/입력/버튼이 동글동글.
-- 사이드바 sticky: 외부 div가 `h-screen overflow-hidden`, main만 `overflow-y-auto`.
-- 페이지 헤더는 그라데이션 위에서 안 보여서 `cloud-card` 칩으로 감싸 가독성 확보.
-
-## 의도적으로 남겨둔 것 (follow-up)
-
-| 항목 | 사유 |
+| 구분 | 역할 |
 |---|---|
-| S3/MinIO + 서명 URL (기획 6장) | MVP 단축, 로컬 FS로 대체. 운영 진입 시점에 `aws-sdk-cpp` 도입 |
-| Redis L2 캐시 + Push fanout (기획 12) | Drogon `RedisClient` segfault 해결 후. `hiredis` 직접도 옵션 |
-| AI 허브 + 임베딩 검색 (기획 5장) | 외부 비용 분리. BGE-m3 도입 시 `embeddings` 테이블 그대로 사용 가능 |
-| EventBus 워터마크 (기획 11.3) | 본격 EventBus 미구현. Drogon loop 기반 비동기로 충분한 동안 유보 |
-| AWS 인프라 자동화 + 부하 테스트 (기획 14·15) | 화면 시연 후 단계 |
-| 사용자 프로필 페이지 / 타인 타임라인 UI | 백엔드 준비됨. `/users/{id}` 화면만 추가하면 됨 |
-| 반응형(모바일) 사이드바 | 데스크톱 우선. 햄버거 메뉴 토글 후속 |
+| `visibility` | 글과 미디어를 볼 수 있는 대상 결정 |
+| `download_policy` | 원본 파일 다운로드 가능 대상 결정 |
 
-## 기술 결정 한 줄 요약
+이 분리 덕분에 “친구에게 보이지만 다운로드는 작성자만 가능” 같은 정책을 표현할 수 있다.
 
-| 영역 | MVP 선택 | 운영용 정석 |
-|---|---|---|
-| HTTP | Drogon | (그대로) |
-| DB | MariaDB Docker | RDS Multi-AZ |
-| 캐시 | (없음) | Redis ElastiCache |
-| 미디어 저장 | 로컬 FS | S3 + CloudFront |
-| 미디어 업로드 | 백엔드 경유 multipart | 클라이언트 → S3 직접 + 서명 URL |
-| 검색 | LIKE | Elasticsearch / AI 임베딩 |
-| 팬아웃 | Pull on read | Push/Pull Hybrid (1k 임계치) |
-| 인증 | JWT RS256 | (그대로) |
-| 인프라 | Docker Compose | EC2 × 2 + ALB + Multi-AZ |
-| 부하 검증 | (없음) | k6/wrk 시나리오 4종 |
+## 댓글, 알림, 차단
+
+커뮤니티 흐름은 댓글, 알림, 차단을 함께 묶어 구현했다.
+
+- 댓글: 조회 권한이 있는 글에만 작성 가능
+- 알림: 댓글/팔로우 이벤트 발생 시 DB 적재
+- SSE: `/me/notifications/stream`으로 새 알림 실시간 전달
+- 차단: 피드, 팔로우, 댓글 권한 판단에 반영
+
+차단 관계는 양방향으로 피드 노출을 막고, 팔로우 생성도 차단한다.
+
+## 개발일지 작성 보조
+
+개발일지는 일반 피드와 별도 카테고리(`devlog`)로 저장한다. 피드 글, 네이버 카페 원문 Markdown, GitHub 커밋 기록을 근거로 모아 AI Hub에 전달하고, 사용자가 선택한 형식에 맞춰 본문을 생성한다.
+
+- 공부형: 개념, 배운 점, 새롭게 느낀 점, 다음 확인 항목
+- 당일 개발 경험: 작업 환경, 막힘, 배운 점, 다음 작업
+- 네이버 Markdown import
+- GitHub commits API import
+- 긴 본문 저장을 위한 devlog 전용 길이 허용
+- 개발일지 수정 시 일반 피드 수정창이 아닌 큰 Markdown 편집창 사용
+
+근거 자료는 본문에 그대로 붙이지 않고, 사용자가 직접 남긴 메모와 판단을 중심으로 본문을 구성한다.
+
+## 프론트엔드
+
+클라이언트는 React, Vite, TypeScript, Tailwind 기반으로 구성했다.
+
+- `src/api/client.ts`: access token 자동 첨부, 401 시 refresh 재시도
+- `AuthContext`: 로그인 상태와 사용자 정보 관리
+- `ProtectedRoute`: 인증된 사용자만 주요 페이지 접근
+- `PostCard`: 글, 미디어, 댓글 표시 공통 컴포넌트
+- `DevlogDraftDialog`: 개발일지 작성 보조
+- `EditPostDialog`: 피드/개발일지 카테고리별 편집 UX 분기
+
+주요 화면은 피드, 내 글, 시점 복원, 검색, 프로필, 개발일지 작성 흐름으로 구성된다.
+
+## 운영 구성
+
+로컬 개발 환경은 Docker Compose로 MariaDB, Redis, MinIO, AI Hub를 띄운다. C++ 서버와 React 클라이언트는 로컬 프로세스로 실행한다.
+
+```bash
+docker compose up -d
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+./build/mongglemonggle
+```
+
+별도 터미널:
+
+```bash
+cd client
+npm run dev
+```
+
+운영 구성은 Terraform으로 VPC, RDS MariaDB, ElastiCache Redis, S3, CloudFront, ALB 리소스를 정의했다.
+
+## 시연 흐름
+
+포트폴리오 시연은 다음 순서로 프로젝트의 핵심 설계를 보여준다.
+
+1. 회원가입과 로그인으로 JWT 흐름 확인
+2. 피드 글 작성과 미디어 첨부
+3. 팔로우 후 피드 노출 확인
+4. 댓글 작성과 알림 확인
+5. 검색에서 키워드/의미 결과 비교
+6. 시점 복원으로 과거 상태 조회와 삭제 글 복원
+7. 피드/네이버/GitHub 근거를 활용한 개발일지 생성
+8. `/readyz`, `/metrics`로 운영 지표 확인
