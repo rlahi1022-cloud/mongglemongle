@@ -131,9 +131,16 @@ Result<Post> PostsService::create(std::int64_t authorId, const CreatePostRequest
     if (req.body.empty()) {
         return PostsError{PostsError::BadRequest, "body must not be empty"};
     }
-    // UTF-8 바이트 기준 — 한글 1글자 ~3바이트. 1000자 ≒ 3000바이트.
-    if (req.body.size() > 3000) {
-        return PostsError{PostsError::BadRequest, "body too long (max ~1000 chars)"};
+    // UTF-8 바이트 기준. 일반 피드는 짧게, 개발일지는 근거/초안이 길어질 수 있어 넉넉히 허용.
+    const std::size_t maxBodyBytes =
+        req.category == PostCategory::Devlog ? 60000 : 3000;
+    if (req.body.size() > maxBodyBytes) {
+        return PostsError{
+            PostsError::BadRequest,
+            req.category == PostCategory::Devlog
+                ? "body too long (max ~20000 chars for devlog)"
+                : "body too long (max ~1000 chars)"
+        };
     }
     try {
         auto tx = db()->newTransaction();

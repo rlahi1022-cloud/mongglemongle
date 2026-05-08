@@ -13,6 +13,8 @@ interface Props {
 
 type SourceKind = "naver" | "github";
 type DevlogMode = "study" | "daily";
+const GITHUB_REPO_KEY = "monggle_github_repo";
+const DEVLOG_BODY_MAX_BYTES = 60000;
 
 interface NaverCafeDoc {
   title: string;
@@ -76,6 +78,39 @@ function commitToLine(commit: GitHubCommit) {
   const date = commit.authorDate ? commit.authorDate.slice(0, 10) : "date unknown";
   const firstLine = commit.message.split("\n")[0] || "commit message empty";
   return `${shortSha} | ${date} | ${firstLine} | ${commit.url}`;
+}
+
+function normalizeGithubRepo(input: string) {
+  const raw = input.trim();
+  const urlMatch = raw.match(/github\.com\/([^/\s]+)\/([^/\s#?]+)/i);
+  if (urlMatch) return `${urlMatch[1]}/${urlMatch[2].replace(/\.git$/, "")}`;
+  return raw.replace(/^@/, "").replace(/\.git$/, "");
+}
+
+function meaningfulCharCount(value: string) {
+  return (value.match(/[가-힣a-zA-Z0-9]/g) ?? []).length;
+}
+
+function hasTooMuchLooseJamo(value: string) {
+  const jamo = (value.match(/[ㄱ-ㅎㅏ-ㅣ]/g) ?? []).length;
+  const meaningful = meaningfulCharCount(value);
+  return jamo >= 4 && jamo > meaningful;
+}
+
+function validateMeaning(label: string, value: string, required = false) {
+  const trimmed = value.trim();
+  if (!trimmed) return required ? `${label}을 입력해주세요.` : null;
+  if (meaningfulCharCount(trimmed) < (required ? 4 : 3)) {
+    return `${label}이 너무 짧거나 의미를 확인하기 어렵습니다.`;
+  }
+  if (hasTooMuchLooseJamo(trimmed)) {
+    return `${label}에 자음/모음만 입력된 부분이 많습니다. 의미가 맞는지 확인해주세요.`;
+  }
+  return null;
+}
+
+function byteLength(value: string) {
+  return new Blob([value]).size;
 }
 
 function sourceBlock(label: string, lines: string[]) {
@@ -206,7 +241,9 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [naverRaw, setNaverRaw] = useState("");
   const [githubRaw, setGithubRaw] = useState("");
-  const [githubRepo, setGithubRepo] = useState("rlahi1022-cloud/mongglemongle");
+  const [githubRepo, setGithubRepo] = useState(
+    () => localStorage.getItem(GITHUB_REPO_KEY) || "rlahi1022-cloud/mongglemongle"
+  );
   const [githubSince, setGithubSince] = useState("");
   const [githubUntil, setGithubUntil] = useState("");
   const [githubLoading, setGithubLoading] = useState(false);
@@ -254,11 +291,13 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   };
 
   const importGithubCommits = async () => {
-    const repo = githubRepo.trim();
+    const repo = normalizeGithubRepo(githubRepo);
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-      setError("GitHub 저장소는 owner/repo 형식으로 입력해주세요.");
+      setError("GitHub 저장소는 owner/repo 또는 GitHub URL로 입력해주세요.");
       return;
     }
+    localStorage.setItem(GITHUB_REPO_KEY, repo);
+    setGithubRepo(repo);
     setGithubLoading(true);
     setError(null);
     try {
@@ -298,8 +337,28 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
       setError("피드 글, 네이버 글, GitHub 기록 중 하나 이상의 근거가 필요합니다.");
       return;
     }
-    if (environmentNotes.trim().length < 12) {
-      setError("실제 개발 환경과 작업감을 조금 더 구체적으로 적어주세요.");
+    const envError = validateMeaning("개발 환경과 작업감", environmentNotes, true);
+    if (envError) {
+      setError(`${envError} 짧게 써도 괜찮지만, 최소한 의미가 확인되어야 합니다.`);
+      return;
+    }
+    const fieldsToCheck = mode === "study"
+      ? [
+        ["개념", concepts],
+        ["배운 점", learnings],
+        ["새롭게 느낀 점", reflections],
+        ["더 확인할 것", nextSteps],
+      ]
+      : [
+        ["막힘", blockers],
+        ["배운 점", learnings],
+        ["다음 작업", nextSteps],
+      ];
+    const invalid = fieldsToCheck
+      .map(([label, value]) => validateMeaning(label, value))
+      .find(Boolean);
+    if (invalid) {
+      setError(invalid);
       return;
     }
     setError(null);
@@ -332,6 +391,10 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
   const publishDraft = async () => {
     if (!draft.trim()) {
       setError("먼저 초안을 생성하거나 작성해주세요.");
+      return;
+    }
+    if (byteLength(draft) > DEVLOG_BODY_MAX_BYTES) {
+      setError("개발일지 본문이 너무 깁니다. 근거 자료를 조금 줄이거나 초안을 압축해주세요.");
       return;
     }
     setPublishing(true);
@@ -429,7 +492,7 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
                 <Input
                   value={githubRepo}
                   onChange={(e) => setGithubRepo(e.target.value)}
-                  placeholder="owner/repo"
+                  placeholder="owner/repo 또는 GitHub URL"
                   className="rounded-2xl"
                 />
                 <Input
@@ -464,6 +527,9 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
 
             <section className="space-y-2">
               <h3 className="text-sm font-bold">개발 환경과 작업감</h3>
+              <div className="text-xs text-muted-foreground">
+                짧게 써도 됩니다. 예: VS Code, Docker, MariaDB 마이그레이션 확인처럼 의미가 확인되면 됩니다.
+              </div>
               <Textarea
                 value={environmentNotes}
                 onChange={(e) => setEnvironmentNotes(e.target.value)}
@@ -540,7 +606,12 @@ export function DevlogDraftDialog({ selectedPosts, onClose, onPublished }: Props
           </div>
 
           <div className="flex min-h-[420px] flex-col space-y-2">
-            <h3 className="text-sm font-bold">초안</h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-bold">초안</h3>
+              <span className="text-xs text-muted-foreground">
+                {byteLength(draft)} / {DEVLOG_BODY_MAX_BYTES} bytes
+              </span>
+            </div>
             <Textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
