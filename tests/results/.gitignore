@@ -1,0 +1,3 @@
+# 실행 결과 파일들은 commit 안 함 — 스크립트 자체만 추적
+api_smoke_*.md
+api_smoke_*.csv
